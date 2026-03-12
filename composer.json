@@ -1,0 +1,20 @@
+{
+  "name": "kings-sacco/sacco-system",
+  "description": "SACCO Management System",
+  "type": "project",
+  "require": {
+    "php": ">=7.4",
+    "phpoffice/phpspreadsheet": "^1.24",
+    "dompdf/dompdf": "^2.0"
+  },
+  "config": {
+    "platform": {
+      "php": "7.4"
+    }
+  },
+  "autoload": {
+    "psr-4": {
+      "KingsSacco\\": "src/"
+    }
+  }
+}
