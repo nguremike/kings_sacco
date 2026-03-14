@@ -1,11 +1,11 @@
 /* Dashboard Layout */
-.sidebar {
+/* .sidebar {
   position: fixed;
   left: 0;
   top: 0;
   bottom: 0;
   width: 260px;
-  background: white;
+  background: #12172e;
   box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
   z-index: 1000;
   overflow-y: auto;
@@ -33,6 +33,65 @@
 
 .sidebar-menu {
   padding: 20px 0;
+} */
+
+.sidebar {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  width: 260px;
+  height: 100%;
+  /* background: #1f2d3d; */
+  overflow-y: auto;
+  transition: 0.3s;
+  /* background: #1f2d3d;
+  color: #c2c7d0; */
+  background: #0f172a;
+  color: #94a3b8;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  color: #c2c7d0;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  /* background: #2c3b4c;
+  color: white; */
+  background: #1e293b;
+  color: #fff;
+}
+
+.submenu {
+  display: none;
+  background: #2c3b4c;
+}
+
+.menu-group.active .submenu {
+  display: block;
+}
+
+.submenu-item {
+  display: block;
+  padding: 10px 45px;
+  color: #c2c7d0;
+  font-size: 13px;
+}
+
+.submenu-item:hover {
+  background: #1a222c;
+}
+
+.arrow {
+  margin-left: auto;
+  transition: 0.3s;
+}
+
+.menu-group.active .arrow {
+  transform: rotate(180deg);
 }
 
 .menu-section {
@@ -61,8 +120,10 @@
 
 .menu-item:hover,
 .menu-item.active {
-  background: rgba(67, 97, 238, 0.05);
-  color: var(--primary-color);
+  /* background: rgba(67, 97, 238, 0.05); */
+  /* color: var(--primary-color); */
+  background: #3b82f6;
+  color: white;
   border-left-color: var(--primary-color);
 }
 

@@ -109,6 +109,25 @@
             printWindow.print();
         };
     }
+    document.querySelectorAll(".menu-toggle").forEach(function(menu) {
+
+        menu.addEventListener("click", function() {
+
+            let parent = this.parentElement;
+
+            document.querySelectorAll(".menu-group").forEach(function(group) {
+
+                if (group !== parent) {
+                    group.classList.remove("active");
+                }
+
+            });
+
+            parent.classList.toggle("active");
+
+        });
+
+    });
 </script>
 </body>
 

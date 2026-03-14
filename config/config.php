@@ -2,7 +2,7 @@
 session_start();
 
 // Application configuration
-define('APP_NAME', 'SACCO Management System');
+define('APP_NAME', 'KINGS UNITED SACCO');
 define('APP_URL', 'http://localhost/kings-sacco');
 define('APP_VERSION', '1.0.0');
 
@@ -11,6 +11,9 @@ date_default_timezone_set('Africa/Nairobi');
 
 // Include database
 require_once __DIR__ . '/database.php';
+
+require_once __DIR__ . '/../includes/functions.php';
+
 
 // Check if user is logged in
 function isLoggedIn()
@@ -46,7 +49,14 @@ function requireRole($role)
 // Get current user ID
 function getCurrentUserId()
 {
-    return $_SESSION['user_id'] ?? 0;
+    // Check if user is logged in and has a valid ID
+    if (isset($_SESSION['user_id']) && is_numeric($_SESSION['user_id']) && $_SESSION['user_id'] > 0) {
+        return (int)$_SESSION['user_id'];
+    }
+
+    // If not logged in or invalid, return null or throw exception
+    // For API calls or background processes, you might need a different approach
+    return null;
 }
 
 // Get current user role
@@ -70,10 +80,32 @@ function formatDate($date)
 // Generate member number
 function generateMemberNumber()
 {
+    $conn = getConnection();
     $year = date('Y');
     $month = date('m');
-    $random = rand(1000, 9999);
-    return "MEM{$year}{$month}{$random}";
+
+    // Get the last member number for current year/month
+    $sql = "SELECT member_no FROM members ORDER BY member_no DESC LIMIT 1";
+
+    $result = $conn->query($sql);
+
+    if ($result && $result->num_rows > 0) {
+        // Last member number exists for this month
+        $last_member = $result->fetch_assoc();
+        $last_number = $last_member['member_no'];
+
+        // Extract the sequential part (last 4 digits)
+        // $sequential = (int)substr($last_number, -4);
+        // $new_sequential = str_pad($sequential + 1, 4, '0', STR_PAD_LEFT);
+        $new_sequential = $last_number + 1;
+    } else {
+        // First member of the month
+        $new_sequential = '1';
+    }
+
+    $conn->close();
+
+    return $new_sequential;
 }
 
 // Generate loan number

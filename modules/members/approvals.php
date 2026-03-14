@@ -1,8 +1,10 @@
 <?php
 //show php errors
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+// ini_set('display_errors', 1);
+// ini_set('display_startup_errors', 1);
+// error_reporting(E_ALL);
+
+
 
 require_once '../../config/config.php';
 requireRole('admin'); // Only admin and officers can approve members
@@ -15,78 +17,118 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
     $remarks = $_POST['remarks'] ?? '';
 
-    if ($action == 'approve') {
-        // Update member status to active
-        $sql = "UPDATE members SET membership_status = 'active' WHERE id = ?";
-        executeQuery($sql, "i", [$member_id]);
+    $conn = getConnection();
+    $conn->begin_transaction();
 
-        // Create user account for member if not exists
-        $member_sql = "SELECT * FROM members WHERE id = ?";
-        $member_result = executeQuery($member_sql, "i", [$member_id]);
-        $member = $member_result->fetch_assoc();
+    try {
+        if ($action == 'approve') {
+            // Update member status to active
+            $sql = "UPDATE members SET membership_status = 'active' WHERE id = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("i", $member_id);
+            $stmt->execute();
 
-        // Check if user account already exists
-        $user_check = executeQuery("SELECT id FROM users WHERE username = ?", "s", [$member['member_no']]);
+            // Get member details for user account creation
+            $member_sql = "SELECT * FROM members WHERE id = ?";
+            $member_result = $conn->query($member_sql);
+            $member = $member_result->fetch_assoc();
 
-        if ($user_check->num_rows == 0) {
-            // Create username from member number
-            $username = $member['member_no'];
-            // Generate random password (member will reset on first login)
-            $temp_password = bin2hex(random_bytes(4)); // 8 character temporary password
-            $hashed_password = password_hash($temp_password, PASSWORD_DEFAULT);
+            // Check if user account already exists
+            $user_check = $conn->prepare("SELECT id FROM users WHERE username = ?");
+            $user_check->bind_param("s", $member['member_no']);
+            $user_check->execute();
+            $user_result = $user_check->get_result();
 
-            $user_sql = "INSERT INTO users (username, password, full_name, email, role, status, created_at) 
-                         VALUES (?, ?, ?, ?, 'member', 1, NOW())";
-            executeQuery($user_sql, "ssss", [$username, $hashed_password, $member['full_name'], $member['email']]);
+            $user_id = null;
 
-            $user_id = executeQuery("SELECT LAST_INSERT_ID() as id")->fetch_assoc()['id'];
+            if ($user_result->num_rows == 0) {
+                // Create username from member number
+                $username = $member['member_no'];
+                // Generate random password (member will reset on first login)
+                $temp_password = bin2hex(random_bytes(4)); // 8 character temporary password
+                $hashed_password = password_hash($temp_password, PASSWORD_DEFAULT);
 
-            // Link user to member
-            executeQuery("UPDATE members SET user_id = ? WHERE id = ?", "ii", [$user_id, $member_id]);
+                // Insert user
+                $user_sql = "INSERT INTO users (username, password, full_name, email, role, status, created_at) 
+                             VALUES (?, ?, ?, ?, 'member', 1, NOW())";
+                $user_stmt = $conn->prepare($user_sql);
+                $user_stmt->bind_param("ssss", $username, $hashed_password, $member['full_name'], $member['email']);
+                $user_stmt->execute();
+                $user_id = $conn->insert_id;
 
-            // Send SMS with login credentials (implement your SMS logic)
-            $message = "Dear {$member['full_name']}, your membership has been approved. Login with Username: {$username} and Password: {$temp_password}. Please change your password on first login.";
-            // sendSMS($member['phone'], $message);
+                // Link user to member
+                $update_sql = "UPDATE members SET user_id = ? WHERE id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_stmt->bind_param("ii", $user_id, $member_id);
+                $update_stmt->execute();
+
+                // Send SMS with login credentials (if phone number exists)
+                if (!empty($member['phone'])) {
+                    $message = "Dear {$member['full_name']}, your membership has been approved. Login with Username: {$username} and Password: {$temp_password}. Please change your password on first login.";
+                    sendNotification($member_id, 'Membership Approved', $message, 'sms');
+                }
+            } else {
+                // User already exists, just link it
+                $existing_user = $user_result->fetch_assoc();
+                $user_id = $existing_user['id'];
+
+                $update_sql = "UPDATE members SET user_id = ? WHERE id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_stmt->bind_param("ii", $user_id, $member_id);
+                $update_stmt->execute();
+            }
+
+            logAudit('APPROVE', 'members', $member_id, ['status' => 'pending'], ['status' => 'active']);
+            $_SESSION['success'] = 'Member approved successfully';
+        } elseif ($action == 'reject') {
+            // Update member status to rejected
+            $sql = "UPDATE members SET membership_status = 'rejected' WHERE id = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("i", $member_id);
+            $stmt->execute();
+
+            // Get member details for notification
+            $member_sql = "SELECT * FROM members WHERE id = ?";
+            $member_result = $conn->query($member_sql);
+            $member = $member_result->fetch_assoc();
+
+            // Send rejection notification
+            if (!empty($member['phone'])) {
+                $message = "Dear {$member['full_name']}, your membership application has been reviewed and was not approved at this time. Remarks: {$remarks}";
+                sendNotification($member_id, 'Membership Update', $message, 'sms');
+            }
+
+            logAudit('REJECT', 'members', $member_id, ['status' => 'pending'], ['status' => 'rejected']);
+            $_SESSION['success'] = 'Member rejected';
+        } elseif ($action == 'request_info') {
+            // Request additional information from member
+            $sql = "UPDATE members SET membership_status = 'pending' WHERE id = ?";
+            $stmt = $conn->prepare($sql);
+            $stmt->bind_param("i", $member_id);
+            $stmt->execute();
+
+            $member_sql = "SELECT * FROM members WHERE id = ?";
+            $member_result = $conn->query($member_sql);
+            $member = $member_result->fetch_assoc();
+
+            // Log the info request
+            logAudit('INFO_REQUEST', 'members', $member_id, null, ['remarks' => $remarks]);
+
+            if (!empty($member['phone'])) {
+                $message = "Dear {$member['full_name']}, we need additional information to process your membership. Remarks: {$remarks}. Please visit our office or upload documents online.";
+                sendNotification($member_id, 'Additional Information Required', $message, 'sms');
+            }
+
+            $_SESSION['success'] = 'Information requested from member';
         }
 
-        logAudit('APPROVE', 'members', $member_id, ['status' => 'pending'], ['status' => 'active']);
-        $_SESSION['success'] = 'Member approved successfully';
-    } elseif ($action == 'reject') {
-        // Update member status to rejected
-        $sql = "UPDATE members SET membership_status = 'rejected' WHERE id = ?";
-        executeQuery($sql, "i", [$member_id]);
-
-        // Store rejection reason in session or another table
-        // Since we don't have rejected_reason column, we'll log it
-        logAudit('REJECT', 'members', $member_id, ['status' => 'pending'], ['status' => 'rejected', 'reason' => $remarks]);
-
-        // Send rejection notification
-        $member_sql = "SELECT * FROM members WHERE id = ?";
-        $member_result = executeQuery($member_sql, "i", [$member_id]);
-        $member = $member_result->fetch_assoc();
-
-        $message = "Dear {$member['full_name']}, your membership application has been reviewed and was not approved at this time. Remarks: {$remarks}";
-        // sendSMS($member['phone'], $message);
-
-        $_SESSION['success'] = 'Member rejected';
-    } elseif ($action == 'request_info') {
-        // Request additional information from member
-        $sql = "UPDATE members SET membership_status = 'pending' WHERE id = ?"; // Keep as pending, just add note
-        executeQuery($sql, "i", [$member_id]);
-
-        $member_sql = "SELECT * FROM members WHERE id = ?";
-        $member_result = executeQuery($member_sql, "i", [$member_id]);
-        $member = $member_result->fetch_assoc();
-
-        // Log the info request
-        logAudit('INFO_REQUEST', 'members', $member_id, null, ['remarks' => $remarks]);
-
-        $message = "Dear {$member['full_name']}, we need additional information to process your membership. Remarks: {$remarks}. Please visit our office or upload documents online.";
-        // sendSMS($member['phone'], $message);
-
-        $_SESSION['success'] = 'Information requested from member';
+        $conn->commit();
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['error'] = 'Action failed: ' . $e->getMessage();
     }
 
+    $conn->close();
     header('Location: approvals.php');
     exit();
 }
@@ -106,7 +148,7 @@ $pending_members = executeQuery($pending_sql);
 // Get recently approved/rejected members - using created_at with date filter
 $recent_sql = "SELECT m.*, u.full_name as approved_by_name
                FROM members m
-               LEFT JOIN users u ON m.user_id = u.id
+               LEFT JOIN users u ON m.approved_by = u.id
                WHERE m.membership_status IN ('active', 'rejected')
                AND m.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
                ORDER BY m.created_at DESC
@@ -143,6 +185,29 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+<!-- Alert Messages -->
+<?php if (isset($_SESSION['success'])): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fas fa-check-circle me-2"></i>
+        <?php
+        echo $_SESSION['success'];
+        unset($_SESSION['success']);
+        ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+
+<?php if (isset($_SESSION['error'])): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="fas fa-exclamation-circle me-2"></i>
+        <?php
+        echo $_SESSION['error'];
+        unset($_SESSION['error']);
+        ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
 
 <!-- Statistics Cards -->
 <div class="row mb-4">
@@ -329,7 +394,7 @@ include '../../includes/header.php';
     </div>
 </div>
 
-<!-- Approval Modal -->
+<!-- Approve Modal -->
 <div class="modal fade" id="approveModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -354,8 +419,8 @@ include '../../includes/header.php';
                         <ul class="mb-0 mt-2">
                             <li>Member status will be set to Active</li>
                             <li>A user account will be created for the member</li>
-                            <li>Login credentials will be generated</li>
-                            <li>Member can now apply for loans</li>
+                            <li>Login credentials will be generated and sent via SMS</li>
+                            <li>Member can now access the system and apply for loans</li>
                         </ul>
                     </div>
                 </div>

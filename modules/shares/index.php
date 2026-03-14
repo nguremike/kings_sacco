@@ -96,19 +96,33 @@ if (isset($_GET['delete']) && hasRole('admin')) {
     exit();
 }
 
-// Get share summary statistics
+// Get share summary statistics INCLUDING OPENING BALANCES
 $summary_sql = "SELECT 
                 COUNT(DISTINCT s.member_id) as total_shareholders,
                 COALESCE(SUM(s.shares_count), 0) as total_shares,
                 COALESCE(SUM(s.total_value), 0) as total_value,
                 COALESCE(AVG(s.shares_count), 0) as avg_shares_per_member,
                 (SELECT COUNT(*) FROM shares_issued) as total_certificates,
-                (SELECT COALESCE(SUM(amount), 0) FROM share_contributions) as total_contributions
+                (SELECT COALESCE(SUM(amount), 0) FROM share_contributions) as total_contributions,
+                (SELECT COALESCE(SUM(amount), 0) FROM opening_balances WHERE balance_type = 'share') as opening_share_value,
+                (SELECT COALESCE(SUM(shares_count), 0) FROM shares WHERE is_opening_balance = 1) as opening_shares_count,
+                (SELECT COALESCE(SUM(amount), 0) FROM opening_balances WHERE balance_type = 'share_contribution') as opening_contributions
                 FROM shares s";
 $summary_result = executeQuery($summary_sql);
 $summary = $summary_result->fetch_assoc();
 
-// Get monthly share purchases for chart
+// Get opening balances summary
+$opening_summary_sql = "SELECT 
+                        COUNT(DISTINCT member_id) as members_with_opening,
+                        SUM(CASE WHEN balance_type = 'share' THEN amount ELSE 0 END) as total_opening_shares,
+                        SUM(CASE WHEN balance_type = 'share_contribution' THEN amount ELSE 0 END) as total_opening_contributions,
+                        COUNT(CASE WHEN balance_type = 'share' THEN 1 END) as share_entries,
+                        COUNT(CASE WHEN balance_type = 'share_contribution' THEN 1 END) as contribution_entries
+                        FROM opening_balances 
+                        WHERE balance_type IN ('share', 'share_contribution')";
+$opening_summary = executeQuery($opening_summary_sql)->fetch_assoc();
+
+// Get monthly share purchases for chart (including opening balances)
 $monthly_sql = "SELECT 
                 DATE_FORMAT(date_purchased, '%Y-%m') as month,
                 SUM(shares_count) as shares_count,
@@ -119,34 +133,54 @@ $monthly_sql = "SELECT
                 ORDER BY month ASC";
 $monthly_result = executeQuery($monthly_sql);
 
-// Get top shareholders
+// Get top shareholders INCLUDING OPENING BALANCES
 $top_shareholders_sql = "SELECT 
                          m.id, m.member_no, m.full_name,
                          COALESCE(SUM(s.shares_count), 0) as total_shares,
                          COALESCE(SUM(s.total_value), 0) as total_value,
                          m.partial_share_balance,
-                         m.full_shares_issued
+                         m.full_shares_issued,
+                         m.total_share_contributions,
+                         m.imported_contributions,
+                         m.imported_shares_issued,
+                         (SELECT COUNT(*) FROM shares WHERE member_id = m.id AND is_opening_balance = 1) as has_opening
                          FROM members m
                          LEFT JOIN shares s ON m.id = s.member_id
                          WHERE m.membership_status = 'active'
                          GROUP BY m.id
-                         HAVING total_shares > 0 OR m.partial_share_balance > 0
+                         HAVING total_shares > 0 OR m.partial_share_balance > 0 OR m.imported_contributions > 0
                          ORDER BY total_value DESC
                          LIMIT 10";
 $top_shareholders = executeQuery($top_shareholders_sql);
 
-// Get recent share transactions
+// Get recent share transactions INCLUDING OPENING BALANCES
 $recent_sql = "SELECT s.*, 
                m.member_no, m.full_name as member_name,
-               m.partial_share_balance, m.full_shares_issued
+               m.partial_share_balance, m.full_shares_issued,
+               CASE WHEN s.is_opening_balance = 1 THEN 'Opening Balance' ELSE 'Normal Transaction' END as transaction_source
                FROM shares s
                JOIN members m ON s.member_id = m.id
                ORDER BY s.date_purchased DESC, s.created_at DESC
                LIMIT 50";
 $recent_shares = executeQuery($recent_sql);
 
+// Get opening balance transactions specifically
+$opening_transactions_sql = "SELECT ob.*, m.member_no, m.full_name,
+                             CASE 
+                                 WHEN ob.balance_type = 'share' THEN 'Opening Share Balance'
+                                 WHEN ob.balance_type = 'share_contribution' THEN 'Opening Contribution'
+                             END as transaction_type_desc
+                             FROM opening_balances ob
+                             JOIN members m ON ob.member_id = m.id
+                             WHERE ob.balance_type IN ('share', 'share_contribution')
+                             ORDER BY ob.created_at DESC
+                             LIMIT 20";
+$opening_transactions = executeQuery($opening_transactions_sql);
+
 // Get members for dropdown
-$members = executeQuery("SELECT id, member_no, full_name, total_share_contributions, full_shares_issued, partial_share_balance 
+$members = executeQuery("SELECT id, member_no, full_name, total_share_contributions, full_shares_issued, partial_share_balance, 
+                        imported_contributions, imported_shares_issued,
+                        CASE WHEN opening_balance_initialized = 1 THEN 'Yes' ELSE 'No' END as has_opening
                         FROM members WHERE membership_status = 'active' ORDER BY full_name");
 
 include '../../includes/header.php';
@@ -185,6 +219,9 @@ include '../../includes/header.php';
             <button class="btn btn-success" onclick="exportShares()">
                 <i class="fas fa-file-excel me-2"></i>Export
             </button>
+            <a href="../initialization/import-share-contributions.php" class="btn btn-info">
+                <i class="fas fa-database"></i> Import Opening Balances
+            </a>
         </div>
     </div>
 </div>
@@ -212,6 +249,21 @@ include '../../includes/header.php';
     </div>
 <?php endif; ?>
 
+<!-- Opening Balance Summary Card -->
+<?php if (($opening_summary['total_opening_shares'] ?? 0) > 0 || ($opening_summary['total_opening_contributions'] ?? 0) > 0): ?>
+    <div class="alert alert-info mb-4">
+        <div class="d-flex align-items-center">
+            <i class="fas fa-database fa-2x me-3"></i>
+            <div>
+                <strong>Opening Balances Loaded:</strong><br>
+                <span class="me-3">Shares: <?php echo formatCurrency($opening_summary['total_opening_shares']); ?> (<?php echo $opening_summary['share_entries']; ?> entries)</span>
+                <span>Contributions: <?php echo formatCurrency($opening_summary['total_opening_contributions']); ?> (<?php echo $opening_summary['contribution_entries']; ?> entries)</span>
+                <span class="badge bg-primary ms-3"><?php echo $opening_summary['members_with_opening']; ?> members with opening balances</span>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
+
 <!-- Summary Cards -->
 <div class="row mb-4">
     <div class="col-xl-2 col-md-4">
@@ -234,6 +286,7 @@ include '../../includes/header.php';
             <div class="stats-content">
                 <h3><?php echo number_format($summary['total_shares'] ?? 0); ?></h3>
                 <p>Total Shares</p>
+                <small>Opening: <?php echo number_format($summary['opening_shares_count'] ?? 0); ?></small>
             </div>
         </div>
     </div>
@@ -246,6 +299,7 @@ include '../../includes/header.php';
             <div class="stats-content">
                 <h3><?php echo formatCurrency($summary['total_value'] ?? 0); ?></h3>
                 <p>Share Value</p>
+                <small>Opening: <?php echo formatCurrency($summary['opening_share_value'] ?? 0); ?></small>
             </div>
         </div>
     </div>
@@ -270,6 +324,7 @@ include '../../includes/header.php';
             <div class="stats-content">
                 <h3><?php echo formatCurrency($summary['total_contributions'] ?? 0); ?></h3>
                 <p>Contributions</p>
+                <small>Opening: <?php echo formatCurrency($summary['opening_contributions'] ?? 0); ?></small>
             </div>
         </div>
     </div>
@@ -312,6 +367,52 @@ include '../../includes/header.php';
     </div>
 </div>
 
+<!-- Opening Balances Section -->
+<?php if ($opening_transactions->num_rows > 0): ?>
+    <div class="card mb-4 border-info">
+        <div class="card-header bg-info text-white">
+            <h5 class="card-title mb-0"><i class="fas fa-database"></i> Opening Balance Transactions</h5>
+            <div class="card-tools">
+                <span class="badge bg-light text-dark">Imported: <?php echo $opening_transactions->num_rows; ?> records</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Member</th>
+                            <th>Member No</th>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>Reference</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php while ($ob = $opening_transactions->fetch_assoc()): ?>
+                            <tr class="table-info">
+                                <td><?php echo formatDate($ob['effective_date']); ?></td>
+                                <td><?php echo $ob['full_name']; ?></td>
+                                <td><?php echo $ob['member_no']; ?></td>
+                                <td>
+                                    <span class="badge bg-<?php echo $ob['balance_type'] == 'share' ? 'primary' : 'info'; ?>">
+                                        <?php echo $ob['transaction_type_desc']; ?>
+                                    </span>
+                                </td>
+                                <td class="fw-bold"><?php echo formatCurrency($ob['amount']); ?></td>
+                                <td><?php echo $ob['reference_no']; ?></td>
+                                <td><?php echo $ob['description']; ?></td>
+                            </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+<?php endif; ?>
+
 <!-- Top Shareholders -->
 <div class="card mb-4">
     <div class="card-header">
@@ -326,6 +427,7 @@ include '../../includes/header.php';
                         <th>Member</th>
                         <th>Member No</th>
                         <th>Full Shares</th>
+                        <th>Opening Shares</th>
                         <th>Partial Balance</th>
                         <th>Total Value</th>
                         <th>Progress</th>
@@ -338,6 +440,7 @@ include '../../includes/header.php';
                     while ($holder = $top_shareholders->fetch_assoc()):
                         $total_contributions = ($holder['total_shares'] * 10000) + ($holder['partial_share_balance'] ?? 0);
                         $progress_percent = (($holder['partial_share_balance'] ?? 0) / 10000) * 100;
+                        $has_opening = $holder['has_opening'] > 0 ? 'Yes' : 'No';
                     ?>
                         <tr>
                             <td><strong>#<?php echo $rank++; ?></strong></td>
@@ -345,9 +448,13 @@ include '../../includes/header.php';
                                 <a href="../members/view.php?id=<?php echo $holder['id']; ?>">
                                     <?php echo $holder['full_name']; ?>
                                 </a>
+                                <?php if ($holder['has_opening']): ?>
+                                    <span class="badge bg-info" title="Has opening balance">OB</span>
+                                <?php endif; ?>
                             </td>
                             <td><?php echo $holder['member_no']; ?></td>
                             <td><?php echo number_format($holder['total_shares']); ?></td>
+                            <td><?php echo number_format($holder['imported_shares_issued'] ?? 0); ?></td>
                             <td><?php echo formatCurrency($holder['partial_share_balance'] ?? 0); ?></td>
                             <td><?php echo formatCurrency($holder['total_value'] + ($holder['partial_share_balance'] ?? 0)); ?></td>
                             <td style="width: 150px;">
@@ -384,10 +491,10 @@ include '../../includes/header.php';
                 <a class="nav-link active" data-bs-toggle="tab" href="#all">All</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#full">Full Shares</a>
+                <a class="nav-link" data-bs-toggle="tab" href="#normal">Normal</a>
             </li>
             <li class="nav-item">
-                <a class="nav-link" data-bs-toggle="tab" href="#partial">Contributions</a>
+                <a class="nav-link" data-bs-toggle="tab" href="#opening">Opening Balances</a>
             </li>
         </ul>
     </div>
@@ -402,6 +509,7 @@ include '../../includes/header.php';
                                 <th>Member</th>
                                 <th>Member No</th>
                                 <th>Type</th>
+                                <th>Source</th>
                                 <th>Shares</th>
                                 <th>Amount</th>
                                 <th>Share Value</th>
@@ -411,7 +519,7 @@ include '../../includes/header.php';
                         </thead>
                         <tbody>
                             <?php while ($share = $recent_shares->fetch_assoc()): ?>
-                                <tr>
+                                <tr class="<?php echo $share['is_opening_balance'] ? 'table-info' : ''; ?>">
                                     <td><?php echo formatDate($share['date_purchased']); ?></td>
                                     <td>
                                         <a href="../members/view.php?id=<?php echo $share['member_id']; ?>">
@@ -424,6 +532,13 @@ include '../../includes/header.php';
                                             <span class="badge bg-success">Full Share</span>
                                         <?php else: ?>
                                             <span class="badge bg-info">Contribution</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($share['is_opening_balance']): ?>
+                                            <span class="badge bg-primary">Opening Balance</span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">Normal</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="<?php echo $share['shares_count'] > 0 ? 'text-success fw-bold' : ''; ?>">
@@ -448,7 +563,7 @@ include '../../includes/header.php';
                                             <a href="receipt.php?id=<?php echo $share['id']; ?>" class="btn btn-sm btn-outline-info" title="Receipt">
                                                 <i class="fas fa-receipt"></i>
                                             </a>
-                                            <?php if (hasRole('admin')): ?>
+                                            <?php if (hasRole('admin') && !$share['is_opening_balance']): ?>
                                                 <a href="javascript:void(0)" onclick="confirmDelete(<?php echo $share['id']; ?>)"
                                                     class="btn btn-sm btn-outline-danger" title="Delete">
                                                     <i class="fas fa-trash"></i>
@@ -463,20 +578,12 @@ include '../../includes/header.php';
                 </div>
             </div>
 
-            <div class="tab-pane fade" id="full">
-                <!-- Full shares only -->
+            <div class="tab-pane fade" id="normal">
+                <!-- Normal transactions only -->
             </div>
 
-            <div class="tab-pane fade" id="partial">
-                <!-- Partial contributions - link to contributions.php -->
-                <div class="text-center py-4">
-                    <i class="fas fa-coins fa-3x text-info mb-3"></i>
-                    <h5>View Partial Contributions</h5>
-                    <p class="text-muted">Track member contributions towards full shares</p>
-                    <a href="contributions.php" class="btn btn-info">
-                        <i class="fas fa-arrow-right me-2"></i>Go to Contributions
-                    </a>
-                </div>
+            <div class="tab-pane fade" id="opening">
+                <!-- Opening balance transactions -->
             </div>
         </div>
     </div>
@@ -505,9 +612,10 @@ include '../../includes/header.php';
                             ?>
                                 <option value="<?php echo $member['id']; ?>"
                                     data-balance="<?php echo $member['partial_share_balance']; ?>"
-                                    data-shares="<?php echo $member['full_shares_issued']; ?>">
+                                    data-shares="<?php echo $member['full_shares_issued']; ?>"
+                                    data-imported="<?php echo $member['imported_contributions']; ?>">
                                     <?php echo $member['full_name']; ?> (<?php echo $member['member_no']; ?>) -
-                                    Shares: <?php echo $member['full_shares_issued']; ?>,
+                                    Shares: <?php echo $member['full_shares_issued']; ?><?php echo $member['has_opening'] == 'Yes' ? ' (Includes Opening)' : ''; ?>,
                                     Progress: <?php echo number_format($progress, 1); ?>%
                                 </option>
                             <?php endwhile; ?>
@@ -590,12 +698,14 @@ include '../../includes/header.php';
         var selected = $(this).find('option:selected');
         var balance = selected.data('balance') || 0;
         var shares = selected.data('shares') || 0;
+        var imported = selected.data('imported') || 0;
         var progress = (balance / 10000 * 100).toFixed(1);
 
         if (selected.val()) {
             $('#memberShareInfo').show();
             $('#shareStatus').html(`
             Full Shares Owned: ${shares}<br>
+            Imported Contributions: KES ${imported.toLocaleString()}<br>
             Partial Balance: KES ${balance.toLocaleString()}<br>
             Progress to Next Share: ${progress}%
         `);
@@ -815,6 +925,14 @@ function getNextShareNumber($member_id)
         border-radius: 10px;
         font-size: 12px;
         line-height: 20px;
+    }
+
+    .table-info {
+        background-color: rgba(23, 162, 184, 0.05) !important;
+    }
+
+    .badge.bg-info {
+        background-color: #17a2b8 !important;
     }
 </style>
 

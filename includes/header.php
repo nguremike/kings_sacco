@@ -35,7 +35,8 @@
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
             <div class="container-fluid">
                 <a class="navbar-brand" href="<?php echo APP_URL; ?>/dashboard.php">
-                    <i class="fas fa-hand-holding-usd me-2"></i>
+                    <!-- <i class="fas fa-hand-holding-usd me-2"></i> -->
+                    <i class="fa-solid fa-chess-king"></i>
                     <?php echo APP_NAME; ?>
                 </a>
 
@@ -80,271 +81,293 @@
         </nav>
 
         <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="sidebar-brand">
-                <i class="fas fa-hand-holding-usd fa-2x"></i>
-                <span>SACCO MS</span>
+        <div class="sidebar  mt-2" id="sidebar">
+
+            <div class="sidebar-brand align-items-center px-3 py-2 ">
+                <!-- <i class="fas fa-hand-holding-usd"></i> -->
+                <i class="fa-solid fa-chess-king"></i>
+                <span> KINGS SACCO</span>
             </div>
 
             <div class="sidebar-menu">
-                <!-- Main Dashboard -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Main</div>
-                    <a href="<?php echo APP_URL; ?>/dashboard.php" class="menu-item <?php echo basename($_SERVER['PHP_SELF']) == 'dashboard.php' ? 'active' : ''; ?>">
-                        <i class="fas fa-tachometer-alt"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </div>
 
-                <!-- Membership Management -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Membership</div>
-                    <a href="<?php echo APP_URL; ?>/modules/members/index.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/members/index.php') !== false ? 'active' : ''; ?>">
+                <!-- Dashboard -->
+                <a href="<?php echo APP_URL; ?>/dashboard.php" class="menu-item">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>Dashboard</span>
+                </a>
+
+                <!-- MEMBERSHIP -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
                         <i class="fas fa-users"></i>
-                        <span>All Members</span>
+                        <span>Membership</span>
+                        <i class="fas fa-chevron-down arrow"></i>
                     </a>
-                    <a href="<?php echo APP_URL; ?>/modules/members/approvals.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/members/approvals.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-user-check"></i>
-                        <span>Member Approvals</span>
-                        <?php
-                        // Get pending approvals count
-                        $pending_count = 0;
-                        $count_result = executeQuery("SELECT COUNT(*) as count FROM members WHERE membership_status = 'pending'");
-                        if ($count_result) {
-                            $pending_count = $count_result->fetch_assoc()['count'];
-                        }
-                        ?>
-                        <?php if ($pending_count > 0): ?>
-                            <span class="badge bg-danger float-end"><?php echo $pending_count; ?></span>
-                        <?php endif; ?>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/members/register.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/members/register.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-user-plus"></i>
-                        <span>Register Member</span>
-                    </a>
-                </div>
 
-                <!-- Shares Management - Updated with new structure -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Share Capital</div>
-                    <a href="<?php echo APP_URL; ?>/modules/shares/index.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/shares/index.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-chart-pie"></i>
-                        <span>Share Dashboard</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/shares/contributions.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/shares/contributions.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-coins"></i>
-                        <span>Contributions</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/shares/certificates.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/shares/certificates.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-certificate"></i>
-                        <span>Certificates</span>
-                    </a>
-                    <div class="menu-sub-item">
-                        <span class="badge bg-info">1 Share = KES 10,000</span>
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/members/index.php" class="submenu-item">
+                            <i class="fas fa-list"></i> All Members
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/members/approvals.php" class="submenu-item">
+                            <i class="fas fa-user-check"></i> Member Approvals
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/members/register.php" class="submenu-item">
+                            <i class="fas fa-user-plus"></i> Register Member
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/members/import.php" class="submenu-item">
+                            <i class="fas fa-file-import"></i> Import Members
+                        </a>
+
                     </div>
                 </div>
 
-                <!-- Deposits/Savings -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Savings</div>
-                    <a href="<?php echo APP_URL; ?>/modules/deposits/index.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/deposits/index.php') !== false ? 'active' : ''; ?>">
+
+                <!-- SHARES -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-chart-pie"></i>
+                        <span>Share Capital</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/shares/index.php" class="submenu-item">
+                            <i class="fas fa-chart-line"></i> Share Dashboard
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/shares/contributions.php" class="submenu-item">
+                            <i class="fas fa-coins"></i> Contributions
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/shares/certificates.php" class="submenu-item">
+                            <i class="fas fa-certificate"></i> Certificates
+                        </a>
+
+                    </div>
+                </div>
+
+
+                <!-- SAVINGS -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
                         <i class="fas fa-piggy-bank"></i>
-                        <span>Deposits</span>
+                        <span>Savings</span>
+                        <i class="fas fa-chevron-down arrow"></i>
                     </a>
-                    <a href="<?php echo APP_URL; ?>/modules/deposits/withdrawals.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/deposits/withdrawals.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-hand-holding-usd"></i>
-                        <span>Withdrawals</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/deposits/statements.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/deposits/statements.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Statements</span>
-                    </a>
-                </div>
 
-                <!-- Loans Management -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Loans</div>
-                    <a href="<?php echo APP_URL; ?>/modules/loans/index.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/loans/index.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-hand-holding-usd"></i>
-                        <span>All Loans</span>
-                        <?php
-                        // Get pending loans count
-                        $pending_loans = 0;
-                        $loan_count_result = executeQuery("SELECT COUNT(*) as count FROM loans WHERE status = 'pending'");
-                        if ($loan_count_result) {
-                            $pending_loans = $loan_count_result->fetch_assoc()['count'];
-                        }
-                        ?>
-                        <?php if ($pending_loans > 0): ?>
-                            <span class="badge bg-warning float-end"><?php echo $pending_loans; ?></span>
-                        <?php endif; ?>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/loans/apply.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/loans/apply.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-plus-circle"></i>
-                        <span>Apply Loan</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/loans/approvals.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/loans/approvals.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-check-circle"></i>
-                        <span>Loan Approvals</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/loans/repayments.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/loans/repayments.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-credit-card"></i>
-                        <span>Repayments</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/loans/guarantors.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/loans/guarantors.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-handshake"></i>
-                        <span>Guarantors</span>
-                    </a>
-                </div>
+                    <div class="submenu">
 
-                <!-- Dividends -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Dividends</div>
-                    <a href="<?php echo APP_URL; ?>/modules/dividends/index.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/dividends/index.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-percentage"></i>
-                        <span>Dividend Management</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/dividends/calculate.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/dividends/calculate.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-calculator"></i>
-                        <span>Calculate Dividends</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/dividends/payments.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/dividends/payments.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-money-bill-wave"></i>
-                        <span>Dividend Payments</span>
-                    </a>
-                </div>
+                        <a href="<?php echo APP_URL; ?>/modules/deposits/index.php" class="submenu-item">
+                            <i class="fas fa-wallet"></i> Deposits
+                        </a>
 
-                <!-- Reports -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Reports</div>
-                    <a href="<?php echo APP_URL; ?>/modules/reports/financial.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/reports/financial.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-chart-line"></i>
-                        <span>Financial Reports</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/reports/loans.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/reports/loans.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-file-invoice"></i>
-                        <span>Loan Reports</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/reports/members.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/reports/members.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-address-book"></i>
-                        <span>Member Reports</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/reports/shares.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/reports/shares.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-chart-pie"></i>
-                        <span>Share Reports</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/reports/dividends.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/reports/dividends.php') !== false ? 'active' : ''; ?>">
-                        <i class="fas fa-percentage"></i>
-                        <span>Dividend Reports</span>
-                    </a>
-                </div>
+                        <a href="<?php echo APP_URL; ?>/modules/deposits/withdrawals.php" class="submenu-item">
+                            <i class="fas fa-hand-holding-usd"></i> Withdrawals
+                        </a>
 
-                <!-- Administration (Admin Only) -->
-                <?php if (hasRole('admin')): ?>
-                    <div class="menu-section">
-                        <div class="menu-section-title">Administration</div>
-                        <a href="<?php echo APP_URL; ?>/modules/settings/users.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/settings/users.php') !== false ? 'active' : ''; ?>">
-                            <i class="fas fa-user-cog"></i>
-                            <span>User Management</span>
+                        <a href="<?php echo APP_URL; ?>/modules/deposits/statements.php" class="submenu-item">
+                            <i class="fas fa-file-invoice"></i> Statements
                         </a>
-                        <a href="<?php echo APP_URL; ?>/modules/settings/loan-products.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/settings/loan-products.php') !== false ? 'active' : ''; ?>">
-                            <i class="fas fa-box"></i>
-                            <span>Loan Products</span>
-                        </a>
-                        <a href="<?php echo APP_URL; ?>/modules/settings/fees.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/settings/fees.php') !== false ? 'active' : ''; ?>">
-                            <i class="fas fa-coins"></i>
-                            <span>Registration Fees</span>
-                        </a>
-                        <a href="<?php echo APP_URL; ?>/modules/settings/audit-logs.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/settings/audit-logs.php') !== false ? 'active' : ''; ?>">
-                            <i class="fas fa-history"></i>
-                            <span>Audit Logs</span>
-                        </a>
-                        <a href="<?php echo APP_URL; ?>/modules/settings/backup.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/settings/backup.php') !== false ? 'active' : ''; ?>">
-                            <i class="fas fa-database"></i>
-                            <span>Backup & Restore</span>
-                        </a>
-                        <a href="<?php echo APP_URL; ?>/modules/settings/system.php" class="menu-item <?php echo strpos($_SERVER['PHP_SELF'], '/settings/system.php') !== false ? 'active' : ''; ?>">
-                            <i class="fas fa-cog"></i>
-                            <span>System Settings</span>
-                        </a>
+
                     </div>
-                <?php endif; ?>
+                </div>
 
-                <!-- Member Portal (For logged in members) -->
-                <?php if (hasRole('member')): ?>
-                    <div class="menu-section">
-                        <div class="menu-section-title">My Account</div>
-                        <a href="<?php echo APP_URL; ?>/member/dashboard.php" class="menu-item">
-                            <i class="fas fa-tachometer-alt"></i>
-                            <span>My Dashboard</span>
+
+                <!-- LOANS -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-hand-holding-usd"></i>
+                        <span>Loans</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/loans/index.php" class="submenu-item">
+                            <i class="fas fa-list"></i> All Loans
                         </a>
-                        <a href="<?php echo APP_URL; ?>/member/profile.php" class="menu-item">
-                            <i class="fas fa-user"></i>
-                            <span>My Profile</span>
+
+                        <a href="<?php echo APP_URL; ?>/modules/loans/apply.php" class="submenu-item">
+                            <i class="fas fa-plus-circle"></i> Apply Loan
                         </a>
-                        <a href="<?php echo APP_URL; ?>/member/shares.php" class="menu-item">
-                            <i class="fas fa-chart-pie"></i>
-                            <span>My Shares</span>
+
+                        <a href="<?php echo APP_URL; ?>/modules/loans/approvals.php" class="submenu-item">
+                            <i class="fas fa-check-circle"></i> Loan Approvals
                         </a>
-                        <a href="<?php echo APP_URL; ?>/member/deposits.php" class="menu-item">
-                            <i class="fas fa-piggy-bank"></i>
-                            <span>My Savings</span>
+
+                        <a href="<?php echo APP_URL; ?>/modules/loans/repayments.php" class="submenu-item">
+                            <i class="fas fa-credit-card"></i> Repayments
                         </a>
-                        <a href="<?php echo APP_URL; ?>/member/loans.php" class="menu-item">
-                            <i class="fas fa-hand-holding-usd"></i>
-                            <span>My Loans</span>
+
+                        <a href="<?php echo APP_URL; ?>/modules/loans/guarantors.php" class="submenu-item">
+                            <i class="fas fa-handshake"></i> Guarantors
                         </a>
-                        <a href="<?php echo APP_URL; ?>/member/dividends.php" class="menu-item">
-                            <i class="fas fa-percentage"></i>
-                            <span>My Dividends</span>
-                        </a>
+
                     </div>
-                <?php endif; ?>
-
-                <!-- Quick Actions -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Quick Actions</div>
-                    <a href="<?php echo APP_URL; ?>/modules/members/register.php" class="menu-item">
-                        <i class="fas fa-user-plus"></i>
-                        <span>Register Member</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/shares/contributions.php" class="menu-item">
-                        <i class="fas fa-coins"></i>
-                        <span>Add Contribution</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/deposits/add.php" class="menu-item">
-                        <i class="fas fa-plus-circle"></i>
-                        <span>Record Deposit</span>
-                    </a>
-                    <a href="<?php echo APP_URL; ?>/modules/loans/apply.php" class="menu-item">
-                        <i class="fas fa-file-signature"></i>
-                        <span>New Loan</span>
-                    </a>
                 </div>
 
-                <!-- Help & Support -->
-                <div class="menu-section">
-                    <div class="menu-section-title">Support</div>
-                    <a href="#" class="menu-item" onclick="showHelp()">
-                        <i class="fas fa-question-circle"></i>
-                        <span>Help Guide</span>
-                    </a>
-                    <a href="#" class="menu-item" onclick="showSupport()">
-                        <i class="fas fa-headset"></i>
-                        <span>Contact Support</span>
-                    </a>
-                    <a href="#" class="menu-item" onclick="showAbout()">
-                        <i class="fas fa-info-circle"></i>
-                        <span>About</span>
-                    </a>
-                </div>
-            </div>
 
-            <!-- Sidebar Footer -->
-            <div class="sidebar-footer">
-                <div class="version">
-                    <small>Version <?php echo APP_VERSION; ?></small>
+                <!-- DIVIDENDS -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-percentage"></i>
+                        <span>Dividends</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/dividends/index.php" class="submenu-item">
+                            <i class="fas fa-chart-line"></i> Dashboard
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/dividends/calculate.php" class="submenu-item">
+                            <i class="fas fa-calculator"></i> Standard Method
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/dividends/calculate-pro-rata.php" class="submenu-item">
+                            <i class="fas fa-chart-area"></i> Pro-rata Method
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/dividends/payments.php" class="submenu-item">
+                            <i class="fas fa-money-bill-wave"></i> Payments
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/dividends/reports.php" class="submenu-item">
+                            <i class="fas fa-file-alt"></i> Reports
+                        </a>
+
+                    </div>
                 </div>
+
+
+                <!-- ACCOUNTING -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-book"></i>
+                        <span>Accounting</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/index.php" class="submenu-item">
+                            <i class="fas fa-chart-line"></i> Dashboard
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/chart-of-accounts.php" class="submenu-item">
+                            <i class="fas fa-list"></i> Chart of Accounts
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/journal.php" class="submenu-item">
+                            <i class="fas fa-book-open"></i> Journal
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/expenses.php" class="submenu-item">
+                            <i class="fas fa-receipt"></i> Expenses
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/income.php" class="submenu-item">
+                            <i class="fas fa-money-bill-wave"></i> Income
+                        </a>
+
+                    </div>
+                </div>
+
+
+                <!-- REPORTS -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Reports</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/reports/financial.php" class="submenu-item">
+                            <i class="fas fa-chart-line"></i> Financial Reports
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/reports/loans.php" class="submenu-item">
+                            <i class="fas fa-file-invoice"></i> Loan Reports
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/reports/members.php" class="submenu-item">
+                            <i class="fas fa-users"></i> Member Reports
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/reports/dividends.php" class="submenu-item">
+                            <i class="fas fa-percentage"></i> Dividend Reports
+                        </a>
+
+                    </div>
+                </div>
+
+
+                <!-- SETTINGS -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-cog"></i>
+                        <span>Administration</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/settings/users.php" class="submenu-item">
+                            <i class="fas fa-user-cog"></i> Users
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/settings/loan-products.php" class="submenu-item">
+                            <i class="fas fa-box"></i> Loan Products
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/settings/system.php" class="submenu-item">
+                            <i class="fas fa-sliders-h"></i> System Settings
+                        </a>
+
+                    </div>
+                </div>
+
+
+                <!-- INITIALIZATION -->
+                <div class="menu-group">
+
+                    <a class="menu-item menu-toggle">
+                        <i class="fas fa-database"></i>
+                        <span>Initialization</span>
+                        <i class="fas fa-chevron-down arrow"></i>
+                    </a>
+
+                    <div class="submenu">
+
+                        <a href="<?php echo APP_URL; ?>/modules/initialization/opening-balances.php" class="submenu-item">
+                            <i class="fas fa-table"></i> Opening Balances
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/initialization/import-share-contributions.php" class="submenu-item">
+                            <i class="fas fa-coins"></i> Import Shares
+                        </a>
+
+                    </div>
+                </div>
+
+
             </div>
         </div>
 
@@ -352,71 +375,61 @@
         <div class="main-content">
         <?php endif; ?>
 
-        <script>
-            // Helper functions for sidebar actions
-            function showHelp() {
-                Swal.fire({
-                    title: 'Help Guide',
-                    html: `
-            <div class="text-start">
-                <h6>Quick Tips:</h6>
-                <ul>
-                    <li>Use the sidebar to navigate between modules</li>
-                    <li>Registration requires KES 2,000 + KES 400 bylaws</li>
-                    <li>1 share = KES 10,000 (can be paid in installments)</li>
-                    <li>Loans require minimum 3 guarantors</li>
-                </ul>
-                <p class="mt-2">For detailed help, contact system administrator.</p>
-            </div>
-        `,
-                    icon: 'info'
-                });
-            }
-
-            function showSupport() {
-                Swal.fire({
-                    title: 'Contact Support',
-                    html: `
-            <div class="text-start">
-                <p><i class="fas fa-phone me-2"></i> +254 700 000 000</p>
-                <p><i class="fas fa-envelope me-2"></i> support@sacco.co.ke</p>
-                <p><i class="fas fa-clock me-2"></i> Mon-Fri: 8:00 AM - 5:00 PM</p>
-            </div>
-        `,
-                    icon: 'info'
-                });
-            }
-
-            function showAbout() {
-                Swal.fire({
-                    title: 'About <?php echo APP_NAME; ?>',
-                    html: `
-            <div class="text-center">
-                <i class="fas fa-hand-holding-usd fa-4x text-primary mb-3"></i>
-                <h5><?php echo APP_NAME; ?></h5>
-                <p>Version <?php echo APP_VERSION; ?></p>
-                <p>A comprehensive SACCO Management System</p>
-                <hr>
-                <p class="text-muted">© <?php echo date('Y'); ?> All rights reserved</p>
-            </div>
-        `,
-                    icon: 'info'
-                });
-            }
-        </script>
-
         <style>
-            /* Additional sidebar styles */
+            /* Additional sidebar styles for accounting and dividends sections */
+            .menu-sub-section {
+                margin-left: 15px;
+                margin-top: 5px;
+                margin-bottom: 5px;
+                border-left: 1px dashed #dee2e6;
+            }
+
+            .menu-sub-title {
+                padding: 5px 15px;
+                font-size: 11px;
+                text-transform: uppercase;
+                color: #6c757d;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+            }
+
+            .menu-item.sub-item {
+                padding-left: 45px;
+                font-size: 13px;
+            }
+
+            .menu-item.sub-item i {
+                width: 20px;
+                font-size: 12px;
+            }
+
+            .menu-item.sub-item small {
+                font-size: 10px;
+                color: #6c757d;
+            }
+
             .sidebar-footer {
                 position: absolute;
                 bottom: 0;
                 width: 100%;
-                padding: 15px 20px;
+                padding: 10px 20px;
                 border-top: 1px solid #e9ecef;
                 background: white;
-                font-size: 12px;
+                font-size: 11px;
                 color: #6c757d;
                 text-align: center;
+            }
+
+            .sidebar-footer .financial-period {
+                margin-top: 3px;
+                color: #28a745;
+                font-weight: 500;
+            }
+
+            .sidebar-footer .dividend-method {
+                border-top: 1px dotted #dee2e6;
+                padding-top: 5px;
+                margin-top: 5px;
             }
 
             .menu-sub-item {
@@ -426,7 +439,7 @@
             }
 
             .sidebar-menu {
-                padding-bottom: 70px;
+                padding-bottom: 100px;
                 /* Space for footer */
             }
 
@@ -473,4 +486,112 @@
             .sidebar::-webkit-scrollbar-thumb:hover {
                 background: #a8a8a8;
             }
+
+            /* Dividend section specific colors */
+            .menu-item [class*="fa-percentage"] {
+                color: #6f42c1;
+            }
+
+            .menu-item [class*="fa-calculator"] {
+                color: #fd7e14;
+            }
+
+            .menu-item [class*="fa-chart-line"] {
+                color: #20c997;
+            }
+
+            .menu-item [class*="fa-balance-scale"] {
+                color: #17a2b8;
+            }
+
+            /* NEW badge animation */
+            .badge.bg-success {
+                animation: pulse 2s infinite;
+            }
+
+            @keyframes pulse {
+                0% {
+                    opacity: 1;
+                }
+
+                50% {
+                    opacity: 0.7;
+                }
+
+                100% {
+                    opacity: 1;
+                }
+            }
+
+            /* Tooltip for method descriptions */
+            .menu-item.sub-item:hover small {
+                color: var(--primary-color);
+            }
         </style>
+
+        <script>
+            // Helper functions for sidebar actions
+            function showHelp() {
+                Swal.fire({
+                    title: 'Help Guide',
+                    html: `
+            <div class="text-start">
+                <h6>Quick Tips:</h6>
+                <ul>
+                    <li>Use the sidebar to navigate between modules</li>
+                    <li>Registration requires KES 2,000 + KES 400 bylaws</li>
+                    <li>1 share = KES 10,000 (can be paid in installments)</li>
+                    <li>Loans require minimum 3 guarantors or self-guarantee</li>
+                    <li><strong>Dividend Methods:</strong> Two calculation methods available</li>
+                    <ul>
+                        <li><strong>Standard:</strong> Full year basis</li>
+                        <li><strong>Pro-rata:</strong> Monthly weighted (Dec joiners excluded)</li>
+                    </ul>
+                </ul>
+                <p class="mt-2">For detailed help, contact system administrator.</p>
+            </div>
+        `,
+                    icon: 'info'
+                });
+            }
+
+            function showSupport() {
+                Swal.fire({
+                    title: 'Contact Support',
+                    html: `
+            <div class="text-start">
+                <p><i class="fas fa-phone me-2"></i> +254 700 000 000</p>
+                <p><i class="fas fa-envelope me-2"></i> support@sacco.co.ke</p>
+                <p><i class="fas fa-clock me-2"></i> Mon-Fri: 8:00 AM - 5:00 PM</p>
+            </div>
+        `,
+                    icon: 'info'
+                });
+            }
+
+            function showAbout() {
+                Swal.fire({
+                    title: 'About <?php echo APP_NAME; ?>',
+                    html: `
+            <div class="text-center">
+                <i class="fas fa-hand-holding-usd fa-4x text-primary mb-3"></i>
+                <h5><?php echo APP_NAME; ?></h5>
+                <p>Version <?php echo APP_VERSION; ?></p>
+                <p>A comprehensive SACCO Management System with full accounting</p>
+                <p><strong>Dividend Methods:</strong> Standard & Pro-rata</p>
+                <hr>
+                <p class="text-muted">© <?php echo date('Y'); ?> All rights reserved</p>
+            </div>
+        `,
+                    icon: 'info'
+                });
+            }
+
+            // Tooltip initialization for method descriptions
+            document.addEventListener('DOMContentLoaded', function() {
+                var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                var tooltipList = tooltipTriggerList.map(function(tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            });
+        </script>

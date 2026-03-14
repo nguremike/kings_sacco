@@ -1,12 +1,4 @@
 <?php
-//show php errors
-// ini_set('display_errors', 1);
-// ini_set('display_startup_errors', 1);
-// error_reporting(E_ALL);
-
-
-
-
 require_once '../../config/config.php';
 requireRole('admin'); // Only admin and loan officers can approve loans
 
@@ -92,14 +84,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     exit();
 }
 
-// Get pending loans with guarantor status
+// Get pending loans with enhanced eligibility criteria
 $pending_sql = "SELECT l.*, 
                 m.full_name, m.member_no, m.phone, m.email, m.date_joined,
                 lp.product_name, lp.interest_rate as product_rate, lp.max_amount,
                 (SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = l.id) as guarantor_count,
                 (SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = l.id AND status = 'approved') as approved_guarantors,
                 (SELECT COALESCE(SUM(guaranteed_amount), 0) FROM loan_guarantors WHERE loan_id = l.id AND status = 'approved') as total_guaranteed,
-                (SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE member_id = l.member_id AND transaction_type = 'deposit') as member_deposits,
+                (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
+                 FROM deposits WHERE member_id = l.member_id) as member_deposits,
+                (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = l.member_id) as member_shares,
                 TIMESTAMPDIFF(MONTH, m.date_joined, CURDATE()) as membership_months
                 FROM loans l
                 JOIN members m ON l.member_id = m.id
@@ -121,8 +115,8 @@ $recent_sql = "SELECT l.*, m.full_name, m.member_no, u.full_name as approved_by_
                JOIN members m ON l.member_id = m.id
                LEFT JOIN users u ON l.approved_by = u.id
                WHERE l.status IN ('approved', 'rejected')
-               AND l.updated_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-               ORDER BY l.updated_at DESC
+               AND l.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+               ORDER BY l.created_at DESC
                LIMIT 20";
 $recent_loans = executeQuery($recent_sql);
 
@@ -131,7 +125,7 @@ $stats_sql = "SELECT
               SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
               SUM(CASE WHEN status = 'guarantor_pending' THEN 1 ELSE 0 END) as guarantor_pending_count,
               SUM(CASE WHEN status = 'approved' AND MONTH(approval_date) = MONTH(NOW()) THEN 1 ELSE 0 END) as approved_this_month,
-              SUM(CASE WHEN status = 'rejected' AND MONTH(updated_at) = MONTH(NOW()) THEN 1 ELSE 0 END) as rejected_this_month,
+              SUM(CASE WHEN status = 'rejected' AND MONTH(created_at) = MONTH(NOW()) THEN 1 ELSE 0 END) as rejected_this_month,
               COALESCE(SUM(CASE WHEN status IN ('pending', 'guarantor_pending') THEN principal_amount ELSE 0 END), 0) as total_pending_amount
               FROM loans";
 $stats_result = executeQuery($stats_sql);
@@ -255,41 +249,53 @@ include '../../includes/header.php';
                             <th>Application Date</th>
                             <th>Status</th>
                             <th>Guarantors</th>
+                            <th>Self-Guarantee</th>
                             <th>Eligibility</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php while ($loan = $pending_loans->fetch_assoc()):
-                            // Calculate eligibility
-                            $eligible = true;
-                            $eligibility_messages = [];
+                            // Calculate eligibility with new rules
+                            $eligible = false;
+                            $eligibility_reason = '';
+                            $eligibility_class = 'danger';
 
-                            // Check membership duration (6 months minimum)
-                            if ($loan['membership_months'] < 6) {
-                                $eligible = false;
-                                $eligibility_messages[] = "Member since {$loan['membership_months']} months (need 6+)";
+                            // Rule 1: Check membership duration (6 months minimum)
+                            $membership_eligible = $loan['membership_months'] >= 6;
+
+                            // Rule 2: Check guarantor coverage
+                            $guarantor_coverage = $loan['total_guaranteed'];
+                            $guarantor_count = $loan['approved_guarantors'];
+
+                            // Rule 3: Check self-guarantee (deposits * 3 >= loan amount)
+                            $self_guarantee_limit = $loan['member_deposits'] * 3;
+                            $self_guarantee_eligible = $self_guarantee_limit >= $loan['principal_amount'];
+
+                            // New approval logic:
+                            // Can approve if:
+                            // 1. Membership duration >= 6 months AND
+                            // 2. (Guarantor coverage >= loan amount) OR (Self-guarantee eligible)
+                            if ($membership_eligible) {
+                                if ($guarantor_coverage >= $loan['principal_amount']) {
+                                    $eligible = true;
+                                    $eligibility_reason = 'Fully guaranteed by ' . $guarantor_count . ' guarantor(s)';
+                                    $eligibility_class = 'success';
+                                } elseif ($self_guarantee_eligible) {
+                                    $eligible = true;
+                                    $eligibility_reason = 'Self-guaranteed (Deposits: ' . formatCurrency($loan['member_deposits']) . ' x 3 = ' . formatCurrency($self_guarantee_limit) . ')';
+                                    $eligibility_class = 'info';
+                                } else {
+                                    $eligibility_reason = 'Insufficient guarantee. Need either:';
+                                    $eligibility_reason .= '<br>- Guarantors: Need ' . formatCurrency($loan['principal_amount'] - $guarantor_coverage) . ' more';
+                                    $eligibility_reason .= '<br>- Self-guarantee: Need deposits of ' . formatCurrency($loan['principal_amount'] / 3) . ' (currently ' . formatCurrency($loan['member_deposits']) . ')';
+                                }
+                            } else {
+                                $eligibility_reason = 'Member since ' . $loan['membership_months'] . ' months (need 6+)';
                             }
 
-                            // Check guarantors (minimum 3 approved)
-                            if ($loan['approved_guarantors'] < 3) {
-                                $eligible = false;
-                                $eligibility_messages[] = "Need " . (3 - $loan['approved_guarantors']) . " more guarantors";
-                            }
-
-                            // Check guarantor coverage (should cover loan amount)
-                            if ($loan['total_guaranteed'] < $loan['principal_amount']) {
-                                $eligible = false;
-                                $shortfall = $loan['principal_amount'] - $loan['total_guaranteed'];
-                                $eligibility_messages[] = "Guarantor shortfall: " . formatCurrency($shortfall);
-                            }
-
-                            // Check deposit/shares ratio (optional)
-                            $required_deposit = $loan['principal_amount'] * 0.1; // 10% of loan amount
-                            if ($loan['member_deposits'] < $required_deposit) {
-                                $eligible = false;
-                                $eligibility_messages[] = "Low savings (need min " . formatCurrency($required_deposit) . ")";
-                            }
+                            // Calculate self-guarantee progress
+                            $self_guarantee_progress = $loan['member_deposits'] > 0 ? min(($loan['member_deposits'] / ($loan['principal_amount'] / 3)) * 100, 100) : 0;
                         ?>
                             <tr>
                                 <td>
@@ -323,28 +329,60 @@ include '../../includes/header.php';
                                 </td>
                                 <td>
                                     <div class="text-center">
-                                        <span class="badge bg-<?php echo $loan['approved_guarantors'] >= 3 ? 'success' : 'danger'; ?>">
+                                        <span class="badge bg-<?php echo $guarantor_coverage >= $loan['principal_amount'] ? 'success' : 'warning'; ?>">
                                             <?php echo $loan['approved_guarantors']; ?>/3
                                         </span>
                                         <br>
-                                        <small><?php echo formatCurrency($loan['total_guaranteed']); ?></small>
+                                        <small><?php echo formatCurrency($guarantor_coverage); ?></small>
+                                        <?php if ($guarantor_coverage < $loan['principal_amount']): ?>
+                                            <br>
+                                            <small class="text-danger">Short: <?php echo formatCurrency($loan['principal_amount'] - $guarantor_coverage); ?></small>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="text-center">
+                                        <?php if ($self_guarantee_eligible): ?>
+                                            <span class="badge bg-success">Eligible</span>
+                                            <br>
+                                            <small><?php echo formatCurrency($loan['member_deposits']); ?> deposits</small>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary">Not Eligible</span>
+                                            <br>
+                                            <div class="progress mt-1" style="height: 5px; width: 80px; margin: 0 auto;">
+                                                <div class="progress-bar bg-info"
+                                                    role="progressbar"
+                                                    style="width: <?php echo $self_guarantee_progress; ?>%;"
+                                                    aria-valuenow="<?php echo $self_guarantee_progress; ?>"
+                                                    aria-valuemin="0"
+                                                    aria-valuemax="100">
+                                                </div>
+                                            </div>
+                                            <small><?php echo formatCurrency($loan['member_deposits']); ?> / <?php echo formatCurrency($loan['principal_amount'] / 3); ?></small>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                                 <td>
                                     <?php if ($eligible): ?>
-                                        <span class="badge bg-success"><i class="fas fa-check"></i> Eligible</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-danger" title="<?php echo implode('\n', $eligibility_messages); ?>">
-                                            <i class="fas fa-exclamation-triangle"></i> Issues
+                                        <span class="badge bg-<?php echo $eligibility_class; ?>">
+                                            <i class="fas fa-check"></i> Eligible
                                         </span>
-                                        <button type="button" class="btn btn-sm btn-link" onclick="showEligibilityIssues(<?php echo htmlspecialchars(json_encode($eligibility_messages)); ?>)">
+                                        <button type="button" class="btn btn-sm btn-link p-0" onclick="showEligibilityDetails('<?php echo htmlspecialchars($eligibility_reason); ?>')">
+                                            <i class="fas fa-info-circle"></i>
+                                        </button>
+                                    <?php else: ?>
+                                        <span class="badge bg-danger">
+                                            <i class="fas fa-exclamation-triangle"></i> Not Eligible
+                                        </span>
+                                        <button type="button" class="btn btn-sm btn-link p-0" onclick="showEligibilityDetails('<?php echo htmlspecialchars($eligibility_reason); ?>')">
                                             <i class="fas fa-info-circle"></i>
                                         </button>
                                     <?php endif; ?>
                                 </td>
                                 <td>
                                     <div class="btn-group">
-                                        <button type="button" class="btn btn-sm btn-success" onclick="showApproveModal(<?php echo $loan['id']; ?>, '<?php echo $loan['full_name']; ?>', <?php echo $loan['principal_amount']; ?>, <?php echo $loan['interest_amount']; ?>, <?php echo $loan['duration_months']; ?>)"
+                                        <button type="button" class="btn btn-sm btn-<?php echo $eligible ? 'success' : 'secondary'; ?>"
+                                            onclick="showApproveModal(<?php echo $loan['id']; ?>, '<?php echo $loan['full_name']; ?>', <?php echo $loan['principal_amount']; ?>, <?php echo $loan['interest_amount']; ?>, <?php echo $loan['duration_months']; ?>)"
                                             <?php echo !$eligible ? 'disabled' : ''; ?>>
                                             <i class="fas fa-check"></i> Approve
                                         </button>
@@ -410,7 +448,7 @@ include '../../includes/header.php';
                                     <span class="badge bg-danger">Rejected</span>
                                 <?php endif; ?>
                             </td>
-                            <td><?php echo formatDate($loan['updated_at']); ?></td>
+                            <td><?php echo formatDate($loan['created_at']); ?></td>
                             <td><?php echo $loan['approved_by_name'] ?? 'System'; ?></td>
                             <td>
                                 <a href="view.php?id=<?php echo $loan['id']; ?>" class="btn btn-sm btn-outline-primary">
@@ -596,7 +634,7 @@ include '../../includes/header.php';
                         <select class="form-control mb-2" id="reject_reason_select" onchange="updateRejectReason()">
                             <option value="">-- Select Reason --</option>
                             <option value="Insufficient guarantors">Insufficient guarantors</option>
-                            <option value="Low savings balance">Low savings balance</option>
+                            <option value="Low savings balance - cannot self-guarantee">Low savings balance - cannot self-guarantee</option>
                             <option value="Poor credit history">Poor credit history</option>
                             <option value="Membership too recent">Membership too recent (need 6+ months)</option>
                             <option value="Existing loan default">Existing loan default</option>
@@ -682,17 +720,13 @@ include '../../includes/header.php';
         }
     }
 
-    // Show eligibility issues
-    function showEligibilityIssues(issues) {
-        var issuesList = '';
-        issues.forEach(function(issue) {
-            issuesList += '<li>' + issue + '</li>';
-        });
-
+    // Show eligibility details
+    function showEligibilityDetails(details) {
         Swal.fire({
-            title: 'Eligibility Issues',
-            html: '<ul class="text-start">' + issuesList + '</ul>',
-            icon: 'warning'
+            title: 'Eligibility Details',
+            html: '<div class="text-start">' + details.replace(/\n/g, '<br>') + '</div>',
+            icon: 'info',
+            confirmButtonColor: '#3085d6'
         });
     }
 
@@ -770,6 +804,15 @@ include '../../includes/header.php';
     .modal-header.bg-danger .btn-close,
     .modal-header.bg-info .btn-close {
         filter: brightness(0) invert(1);
+    }
+
+    .progress {
+        background-color: #e9ecef;
+        border-radius: 10px;
+    }
+
+    .progress-bar {
+        border-radius: 10px;
     }
 
     /* Responsive */
