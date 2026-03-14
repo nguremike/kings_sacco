@@ -825,14 +825,7 @@ include '../../includes/header.php';
         });
     })();
 
-    // Initialize Select2
-    $(document).ready(function() {
-        $('.select2').select2({
-            theme: 'bootstrap-5',
-            width: '100%',
-            dropdownParent: $('#depositModal')
-        });
-    });
+
 
     // Update chart based on period
     function updateChart() {
@@ -893,3 +886,14 @@ include '../../includes/header.php';
 </style>
 
 <?php include '../../includes/footer.php'; ?>
+
+<script>
+    // Initialize Select2
+    $(document).ready(function() {
+        $('.select2').select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            dropdownParent: $('#depositModal')
+        });
+    });
+</script>
