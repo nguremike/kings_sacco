@@ -1,20 +1,24 @@
 <?php
+// modules/loans/process-guarantors.php
 require_once '../../config/config.php';
-requireRole('admin'); // Only admin can process guarantors
+requireRole('admin');
 
 $loan_id = $_GET['loan_id'] ?? 0;
 
+// Get system settings
+$settings = getLoanSettings();
+
 // Get loan details
-$loan_sql = "SELECT l.*, m.full_name, m.member_no, m.phone, m.email,
-             lp.product_name, lp.interest_rate
-             FROM loans l
-             JOIN members m ON l.member_id = m.id
-             JOIN loan_products lp ON l.product_id = lp.id
-             WHERE l.id = ? AND l.status = 'guarantor_pending'";
+$loan_sql = "SELECT l.*, m.full_name, m.member_no, lp.product_name,
+             lp.guarantor_required, lp.min_guarantors, lp.max_guarantors, lp.guarantor_coverage
+             FROM loans l 
+             JOIN members m ON l.member_id = m.id 
+             JOIN loan_products lp ON l.product_id = lp.id 
+             WHERE l.id = ?";
 $loan_result = executeQuery($loan_sql, "i", [$loan_id]);
 
 if ($loan_result->num_rows == 0) {
-    $_SESSION['error'] = 'Loan not found or not in guarantor pending status';
+    $_SESSION['error'] = 'Loan not found';
     header('Location: index.php');
     exit();
 }
@@ -24,180 +28,47 @@ $loan = $loan_result->fetch_assoc();
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $action = $_POST['action'] ?? '';
-    $guarantor_ids = $_POST['guarantor_ids'] ?? [];
-    $remarks = $_POST['remarks'] ?? '';
 
+    processGuarantorAction($loan_id, $action, $loan, $settings);
+}
+
+function getLoanSettings()
+{
+    $settings = [];
+    $result = executeQuery("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE '%guarantor%'");
+    while ($row = $result->fetch_assoc()) {
+        $settings[$row['setting_key']] = $row['setting_value'];
+    }
+    return $settings;
+}
+
+function processGuarantorAction($loan_id, $action, $loan, $settings)
+{
     $conn = getConnection();
     $conn->begin_transaction();
 
     try {
-        if ($action == 'approve_all') {
-            // Approve all selected guarantors
-            foreach ($guarantor_ids as $guarantor_id) {
-                $update_sql = "UPDATE loan_guarantors SET status = 'approved', approval_date = CURDATE() WHERE id = ? AND loan_id = ?";
-                $stmt = $conn->prepare($update_sql);
-                $stmt->bind_param("ii", $guarantor_id, $loan_id);
-                $stmt->execute();
-
-                // Get guarantor details for notification
-                $guarantor_sql = "SELECT lg.*, m.full_name, m.phone 
-                                  FROM loan_guarantors lg
-                                  JOIN members m ON lg.guarantor_member_id = m.id
-                                  WHERE lg.id = ?";
-                $g_stmt = $conn->prepare($guarantor_sql);
-                $g_stmt->bind_param("i", $guarantor_id);
-                $g_stmt->execute();
-                $g_result = $g_stmt->get_result();
-                $guarantor = $g_result->fetch_assoc();
-
-                // Send notification to guarantor
-                if (!empty($guarantor['phone'])) {
-                    $message = "Dear {$guarantor['full_name']}, you have been approved as a guarantor for loan {$loan['loan_no']} of KES " . number_format($loan['principal_amount']) . ". Thank you.";
-                    sendNotification($guarantor['guarantor_member_id'], 'Guarantor Approved', $message, 'sms');
-                }
-            }
-
-            // Check if we have at least 3 approved guarantors - FIXED QUERY
-            $check_sql = "SELECT COUNT(*) as count FROM loan_guarantors WHERE loan_id = ? AND status = 'approved'";
-            $check_stmt = $conn->prepare($check_sql);
-            $check_stmt->bind_param("i", $loan_id);
-            $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
-            $approved_count = $check_result->fetch_assoc()['count'];
-
-            if ($approved_count >= 3) {
-                // Update loan status to pending approval
-                $update_loan_sql = "UPDATE loans SET status = 'pending' WHERE id = ?";
-                $stmt = $conn->prepare($update_loan_sql);
-                $stmt->bind_param("i", $loan_id);
-                $stmt->execute();
-
-                // Send notification to member
-                $message = "Dear {$loan['full_name']}, your loan application has met the guarantor requirements and is now ready for final approval.";
-                sendNotification($loan['member_id'], 'Loan Update', $message, 'sms');
-            }
-
-            $_SESSION['success'] = 'Guarantors approved successfully';
+        if ($action == 'add_guarantor') {
+            addGuarantor($conn, $loan_id, $loan, $settings);
+        } elseif ($action == 'approve_guarantor') {
+            approveGuarantor($conn, $loan_id);
+        } elseif ($action == 'reject_guarantor') {
+            rejectGuarantor($conn, $loan_id);
+        } elseif ($action == 'approve_all') {
+            approveAllGuarantors($conn, $loan_id, $loan, $settings);
         } elseif ($action == 'reject_all') {
-            // Reject all selected guarantors
-            foreach ($guarantor_ids as $guarantor_id) {
-                $update_sql = "UPDATE loan_guarantors SET status = 'rejected' WHERE id = ? AND loan_id = ?";
-                $stmt = $conn->prepare($update_sql);
-                $stmt->bind_param("ii", $guarantor_id, $loan_id);
-                $stmt->execute();
-
-                // Get guarantor details for notification
-                $guarantor_sql = "SELECT lg.*, m.full_name, m.phone 
-                                  FROM loan_guarantors lg
-                                  JOIN members m ON lg.guarantor_member_id = m.id
-                                  WHERE lg.id = ?";
-                $g_stmt = $conn->prepare($guarantor_sql);
-                $g_stmt->bind_param("i", $guarantor_id);
-                $g_stmt->execute();
-                $g_result = $g_stmt->get_result();
-                $guarantor = $g_result->fetch_assoc();
-
-                // Send notification to guarantor
-                if (!empty($guarantor['phone'])) {
-                    $message = "Dear {$guarantor['full_name']}, your guarantor application for loan {$loan['loan_no']} has been reviewed and was not approved. Remarks: {$remarks}";
-                    sendNotification($guarantor['guarantor_member_id'], 'Guarantor Update', $message, 'sms');
-                }
-            }
-
-            $_SESSION['success'] = 'Guarantors rejected';
+            rejectAllGuarantors($conn, $loan_id);
         } elseif ($action == 'approve_selected') {
-            // Approve only selected guarantors
-            foreach ($guarantor_ids as $guarantor_id) {
-                $update_sql = "UPDATE loan_guarantors SET status = 'approved', approval_date = CURDATE() WHERE id = ? AND loan_id = ?";
-                $stmt = $conn->prepare($update_sql);
-                $stmt->bind_param("ii", $guarantor_id, $loan_id);
-                $stmt->execute();
-            }
-
-            // Check if we now have at least 3 approved guarantors - FIXED QUERY
-            $check_sql = "SELECT COUNT(*) as count FROM loan_guarantors WHERE loan_id = ? AND status = 'approved'";
-            $check_stmt = $conn->prepare($check_sql);
-            $check_stmt->bind_param("i", $loan_id);
-            $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
-            $approved_count = $check_result->fetch_assoc()['count'];
-
-            if ($approved_count >= 3) {
-                // Update loan status to pending approval
-                $update_loan_sql = "UPDATE loans SET status = 'pending' WHERE id = ?";
-                $stmt = $conn->prepare($update_loan_sql);
-                $stmt->bind_param("i", $loan_id);
-                $stmt->execute();
-
-                // Send notification to member
-                $message = "Dear {$loan['full_name']}, your loan application has met the guarantor requirements and is now ready for final approval.";
-                sendNotification($loan['member_id'], 'Loan Update', $message, 'sms');
-            }
-
-            $_SESSION['success'] = 'Selected guarantors approved successfully';
+            approveSelectedGuarantors($conn, $loan_id);
         } elseif ($action == 'reject_selected') {
-            // Reject selected guarantors
-            foreach ($guarantor_ids as $guarantor_id) {
-                $update_sql = "UPDATE loan_guarantors SET status = 'rejected' WHERE id = ? AND loan_id = ?";
-                $stmt = $conn->prepare($update_sql);
-                $stmt->bind_param("ii", $guarantor_id, $loan_id);
-                $stmt->execute();
-            }
-
-            $_SESSION['success'] = 'Selected guarantors rejected';
-        } elseif ($action == 'add_guarantor') {
-            // Add a new guarantor
-            $guarantor_member_id = $_POST['guarantor_member_id'];
-            $guaranteed_amount = $_POST['guaranteed_amount'];
-
-            // Check if member is already a guarantor for this loan
-            $check_sql = "SELECT id FROM loan_guarantors WHERE loan_id = ? AND guarantor_member_id = ?";
-            $check_stmt = $conn->prepare($check_sql);
-            $check_stmt->bind_param("ii", $loan_id, $guarantor_member_id);
-            $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
-
-            if ($check_result->num_rows > 0) {
-                $_SESSION['error'] = 'This member is already a guarantor for this loan';
-                header('Location: process-guarantors.php?loan_id=' . $loan_id);
-                exit();
-            }
-
-            // Check if guarantor has enough shares/deposits (optional)
-            $check_eligibility = checkGuarantorEligibility($conn, $guarantor_member_id, $guaranteed_amount);
-            if (!$check_eligibility['eligible']) {
-                $_SESSION['error'] = 'Guarantor not eligible: ' . $check_eligibility['reason'];
-                header('Location: process-guarantors.php?loan_id=' . $loan_id);
-                exit();
-            }
-
-            $insert_sql = "INSERT INTO loan_guarantors (loan_id, guarantor_member_id, guaranteed_amount, status, created_at) 
-                          VALUES (?, ?, ?, 'pending', NOW())";
-            $insert_stmt = $conn->prepare($insert_sql);
-            $insert_stmt->bind_param("iid", $loan_id, $guarantor_member_id, $guaranteed_amount);
-            $insert_stmt->execute();
-
-            // Get member details for notification
-            $member_sql = "SELECT full_name, phone FROM members WHERE id = ?";
-            $member_stmt = $conn->prepare($member_sql);
-            $member_stmt->bind_param("i", $guarantor_member_id);
-            $member_stmt->execute();
-            $member_result = $member_stmt->get_result();
-            $guarantor_member = $member_result->fetch_assoc();
-
-            // Send notification to potential guarantor
-            if (!empty($guarantor_member['phone'])) {
-                $message = "Dear {$guarantor_member['full_name']}, you have been added as a guarantor for loan {$loan['loan_no']} of KES " . number_format($loan['principal_amount']) . ". Please visit the office to confirm.";
-                sendNotification($guarantor_member_id, 'Guarantor Request', $message, 'sms');
-            }
-
-            $_SESSION['success'] = 'New guarantor added successfully';
+            rejectSelectedGuarantors($conn, $loan_id);
         }
 
         $conn->commit();
     } catch (Exception $e) {
         $conn->rollback();
         $_SESSION['error'] = 'Action failed: ' . $e->getMessage();
+        error_log("Guarantor action error: " . $e->getMessage());
     }
 
     $conn->close();
@@ -205,75 +76,332 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     exit();
 }
 
-// Function to check guarantor eligibility
-function checkGuarantorEligibility($conn, $member_id, $guaranteed_amount)
+function addGuarantor($conn, $loan_id, $loan, $settings)
 {
-    // Check member's total shares/deposits
-    $shares_sql = "SELECT COALESCE(SUM(total_value), 0) as total_shares FROM shares WHERE member_id = ?";
-    $shares_stmt = $conn->prepare($shares_sql);
-    $shares_stmt->bind_param("i", $member_id);
-    $shares_stmt->execute();
-    $shares_result = $shares_stmt->get_result();
-    $shares = $shares_result->fetch_assoc()['total_shares'];
+    $guarantor_member_id = $_POST['guarantor_member_id'];
+    $guaranteed_amount = $_POST['guaranteed_amount'];
 
-    $deposits_sql = "SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) as balance 
-                     FROM deposits WHERE member_id = ?";
-    $deposits_stmt = $conn->prepare($deposits_sql);
-    $deposits_stmt->bind_param("i", $member_id);
-    $deposits_stmt->execute();
-    $deposits_result = $deposits_stmt->get_result();
-    $balance = $deposits_result->fetch_assoc()['balance'];
-
-    $total_assets = $shares + $balance;
-
-    // Check existing guarantor commitments
-    $existing_sql = "SELECT COALESCE(SUM(guaranteed_amount), 0) as total FROM loan_guarantors 
-                     WHERE guarantor_member_id = ? AND status IN ('pending', 'approved')";
-    $existing_stmt = $conn->prepare($existing_sql);
-    $existing_stmt->bind_param("i", $member_id);
-    $existing_stmt->execute();
-    $existing_result = $existing_stmt->get_result();
-    $existing_commitments = $existing_result->fetch_assoc()['total'];
-
-    $available_capacity = $total_assets - $existing_commitments;
-
-    if ($total_assets < $guaranteed_amount) {
-        return [
-            'eligible' => false,
-            'reason' => "Insufficient assets (Shares: " . formatCurrency($shares) . ", Savings: " . formatCurrency($balance) . ")"
-        ];
+    // Check if already a guarantor
+    $check = $conn->prepare("SELECT id FROM loan_guarantors WHERE loan_id = ? AND guarantor_member_id = ?");
+    $check->bind_param("ii", $loan_id, $guarantor_member_id);
+    $check->execute();
+    if ($check->get_result()->num_rows > 0) {
+        throw new Exception("Member is already a guarantor for this loan");
     }
 
-    if ($available_capacity < $guaranteed_amount) {
+    // Check guarantor eligibility
+    $eligibility = checkGuarantorEligibility($conn, $guarantor_member_id, $guaranteed_amount, $loan, $settings);
+    if (!$eligibility['eligible']) {
+        throw new Exception($eligibility['reason']);
+    }
+
+    // Add guarantor
+    $sql = "INSERT INTO loan_guarantors (loan_id, guarantor_member_id, guaranteed_amount, status) 
+            VALUES (?, ?, ?, 'pending')";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("iid", $loan_id, $guarantor_member_id, $guaranteed_amount);
+    $stmt->execute();
+
+    // Get member details for notification
+    $member = $conn->prepare("SELECT full_name, phone FROM members WHERE id = ?");
+    $member->bind_param("i", $guarantor_member_id);
+    $member->execute();
+    $member_data = $member->get_result()->fetch_assoc();
+
+    // Send notification to guarantor
+    if (!empty($member_data['phone'])) {
+        $message = "You have been added as a guarantor for loan " . $loan['loan_no'] . ". Please visit the office to confirm.";
+        sendNotification($guarantor_member_id, 'Guarantor Added', $message, 'sms');
+    }
+
+    $_SESSION['success'] = 'Guarantor added successfully';
+}
+
+function checkGuarantorEligibility($conn, $member_id, $amount, $loan, $settings)
+{
+    // Get guarantor's financial status
+    $savings = $conn->query("SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) as balance 
+                            FROM deposits WHERE member_id = $member_id")->fetch_assoc()['balance'];
+
+    $shares = $conn->query("SELECT COALESCE(SUM(total_value), 0) as total FROM shares WHERE member_id = $member_id")->fetch_assoc()['total'];
+
+    $total_assets = $savings + $shares;
+
+    // Check existing guarantor commitments
+    $existing = $conn->query("SELECT COALESCE(SUM(guaranteed_amount), 0) as total 
+                             FROM loan_guarantors WHERE guarantor_member_id = $member_id AND status IN ('pending', 'approved')")->fetch_assoc()['total'];
+
+    $available = $total_assets - $existing;
+
+    if ($available < $amount) {
         return [
             'eligible' => false,
-            'reason' => "Existing guarantor commitments of " . formatCurrency($existing_commitments) . " reduce available capacity"
+            'reason' => "Insufficient assets. Available: " . formatCurrency($available) . ", Required: " . formatCurrency($amount)
         ];
     }
 
     return ['eligible' => true, 'reason' => ''];
 }
 
-// Get all guarantors for this loan
-$guarantors_sql = "SELECT lg.*, 
-                   m.member_no, m.full_name as guarantor_name, 
-                   m.phone, m.email,
-                   (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as total_shares,
-                   (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
-                    FROM deposits WHERE member_id = m.id) as savings_balance
-                   FROM loan_guarantors lg
-                   JOIN members m ON lg.guarantor_member_id = m.id
-                   WHERE lg.loan_id = ?
-                   ORDER BY 
-                       CASE lg.status 
-                           WHEN 'pending' THEN 1 
-                           WHEN 'approved' THEN 2 
-                           ELSE 3 
-                       END, 
-                       lg.created_at ASC";
-$guarantors = executeQuery($guarantors_sql, "i", [$loan_id]);
+function approveGuarantor($conn, $loan_id)
+{
+    $guarantor_id = $_POST['guarantor_id'] ?? $_GET['id'] ?? 0;
 
-// Get statistics - FIXED QUERIES
+    if (!$guarantor_id) {
+        throw new Exception("Guarantor ID not provided");
+    }
+
+    $sql = "UPDATE loan_guarantors SET status = 'approved', approval_date = CURDATE() WHERE id = ? AND loan_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $guarantor_id, $loan_id);
+    $stmt->execute();
+
+    if ($stmt->affected_rows == 0) {
+        throw new Exception("Guarantor not found or already processed");
+    }
+
+    // Get guarantor details for notification
+    $guarantor = $conn->prepare("SELECT lg.*, m.full_name, m.phone, l.loan_no 
+                                 FROM loan_guarantors lg
+                                 JOIN members m ON lg.guarantor_member_id = m.id
+                                 JOIN loans l ON lg.loan_id = l.id
+                                 WHERE lg.id = ?");
+    $guarantor->bind_param("i", $guarantor_id);
+    $guarantor->execute();
+    $g_data = $guarantor->get_result()->fetch_assoc();
+
+    // Send notification
+    if (!empty($g_data['phone'])) {
+        $message = "Your guarantor application for loan " . $g_data['loan_no'] . " has been APPROVED. Thank you.";
+        sendNotification($g_data['guarantor_member_id'], 'Guarantor Approved', $message, 'sms');
+    }
+
+    // Check if loan now has required guarantors
+    checkGuarantorRequirements($conn, $loan_id);
+
+    $_SESSION['success'] = 'Guarantor approved successfully';
+}
+
+function rejectGuarantor($conn, $loan_id)
+{
+    $guarantor_id = $_POST['guarantor_id'] ?? $_GET['id'] ?? 0;
+    $reason = $_POST['reason'] ?? $_POST['remarks'] ?? 'No reason provided';
+
+    if (!$guarantor_id) {
+        throw new Exception("Guarantor ID not provided");
+    }
+
+    $sql = "UPDATE loan_guarantors SET status = 'rejected', rejection_reason = ? WHERE id = ? AND loan_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("sii", $reason, $guarantor_id, $loan_id);
+    $stmt->execute();
+
+    if ($stmt->affected_rows == 0) {
+        throw new Exception("Guarantor not found or already processed");
+    }
+
+    // Get guarantor details for notification
+    $guarantor = $conn->prepare("SELECT lg.*, m.full_name, m.phone, l.loan_no 
+                                 FROM loan_guarantors lg
+                                 JOIN members m ON lg.guarantor_member_id = m.id
+                                 JOIN loans l ON lg.loan_id = l.id
+                                 WHERE lg.id = ?");
+    $guarantor->bind_param("i", $guarantor_id);
+    $guarantor->execute();
+    $g_data = $guarantor->get_result()->fetch_assoc();
+
+    // Send notification
+    if (!empty($g_data['phone'])) {
+        $message = "Your guarantor application for loan " . $g_data['loan_no'] . " has been REJECTED. Reason: $reason";
+        sendNotification($g_data['guarantor_member_id'], 'Guarantor Rejected', $message, 'sms');
+    }
+
+    $_SESSION['success'] = 'Guarantor rejected successfully';
+}
+
+function approveAllGuarantors($conn, $loan_id, $loan, $settings)
+{
+    // Get all pending guarantors
+    $pending = $conn->query("SELECT id, guarantor_member_id FROM loan_guarantors WHERE loan_id = $loan_id AND status = 'pending'");
+
+    while ($g = $pending->fetch_assoc()) {
+        $update = $conn->prepare("UPDATE loan_guarantors SET status = 'approved', approval_date = CURDATE() WHERE id = ?");
+        $update->bind_param("i", $g['id']);
+        $update->execute();
+
+        // Send notification
+        $member = $conn->prepare("SELECT phone, full_name FROM members WHERE id = ?");
+        $member->bind_param("i", $g['guarantor_member_id']);
+        $member->execute();
+        $m = $member->get_result()->fetch_assoc();
+
+        if (!empty($m['phone'])) {
+            $message = "Your guarantor application for loan " . $loan['loan_no'] . " has been APPROVED.";
+            sendNotification($g['guarantor_member_id'], 'Guarantor Approved', $message, 'sms');
+        }
+    }
+
+    // Check if loan now has required guarantors
+    checkGuarantorRequirements($conn, $loan_id, $loan, $settings);
+
+    $_SESSION['success'] = 'All pending guarantors approved';
+}
+
+function rejectAllGuarantors($conn, $loan_id)
+{
+    $reason = $_POST['reason'] ?? $_POST['remarks'] ?? 'Rejected by admin';
+
+    // Get all pending guarantors
+    $pending = $conn->query("SELECT id, guarantor_member_id FROM loan_guarantors WHERE loan_id = $loan_id AND status = 'pending'");
+
+    while ($g = $pending->fetch_assoc()) {
+        $update = $conn->prepare("UPDATE loan_guarantors SET status = 'rejected', rejection_reason = ? WHERE id = ?");
+        $update->bind_param("si", $reason, $g['id']);
+        $update->execute();
+
+        // Send notification
+        $member = $conn->prepare("SELECT phone, full_name FROM members WHERE id = ?");
+        $member->bind_param("i", $g['guarantor_member_id']);
+        $member->execute();
+        $m = $member->get_result()->fetch_assoc();
+
+        if (!empty($m['phone'])) {
+            $message = "Your guarantor application for loan has been REJECTED. Reason: $reason";
+            sendNotification($g['guarantor_member_id'], 'Guarantor Rejected', $message, 'sms');
+        }
+    }
+
+    $_SESSION['success'] = 'All pending guarantors rejected';
+}
+
+function approveSelectedGuarantors($conn, $loan_id)
+{
+    $selected_ids = $_POST['selected_ids'] ?? [];
+
+    if (empty($selected_ids)) {
+        throw new Exception("No guarantors selected");
+    }
+
+    $placeholders = implode(',', array_fill(0, count($selected_ids), '?'));
+    $types = str_repeat('i', count($selected_ids));
+
+    $sql = "UPDATE loan_guarantors SET status = 'approved', approval_date = CURDATE() WHERE id IN ($placeholders) AND loan_id = ?";
+    $params = array_merge($selected_ids, [$loan_id]);
+    $types .= "i";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+
+    // Check if loan now has required guarantors
+    checkGuarantorRequirements($conn, $loan_id);
+
+    $_SESSION['success'] = 'Selected guarantors approved';
+}
+
+function rejectSelectedGuarantors($conn, $loan_id)
+{
+    $selected_ids = $_POST['selected_ids'] ?? [];
+    $reason = $_POST['reason'] ?? $_POST['remarks'] ?? 'Rejected by admin';
+
+    if (empty($selected_ids)) {
+        throw new Exception("No guarantors selected");
+    }
+
+    $placeholders = implode(',', array_fill(0, count($selected_ids), '?'));
+    $types = str_repeat('i', count($selected_ids));
+
+    $sql = "UPDATE loan_guarantors SET status = 'rejected', rejection_reason = ? WHERE id IN ($placeholders) AND loan_id = ?";
+    $params = array_merge([$reason], $selected_ids, [$loan_id]);
+    $types = "s" . $types . "i";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+
+    $_SESSION['success'] = 'Selected guarantors rejected';
+}
+
+function checkGuarantorRequirements($conn, $loan_id, $loan = null, $settings = null)
+{
+    if (!$loan) {
+        $loan_result = $conn->query("SELECT l.*, lp.min_guarantors, lp.guarantor_coverage 
+                                     FROM loans l 
+                                     JOIN loan_products lp ON l.product_id = lp.id 
+                                     WHERE l.id = $loan_id");
+        $loan = $loan_result->fetch_assoc();
+    }
+
+    // Get approved guarantors
+    $approved = $conn->query("SELECT COUNT(*) as count, COALESCE(SUM(guaranteed_amount), 0) as total 
+                             FROM loan_guarantors WHERE loan_id = $loan_id AND status = 'approved'")->fetch_assoc();
+
+    $min_guarantors = $loan['min_guarantors'] ?? ($settings['min_guarantors'] ?? 1);
+    $required_coverage = $loan['principal_amount'] * ($loan['guarantor_coverage'] / 100);
+
+    if ($approved['count'] >= $min_guarantors && $approved['total'] >= $required_coverage) {
+        $conn->query("UPDATE loans SET status = 'pending' WHERE id = $loan_id");
+
+        // Notify member
+        $loan_details = $conn->query("SELECT member_id, loan_no FROM loans WHERE id = $loan_id")->fetch_assoc();
+        $message = "Your loan " . $loan_details['loan_no'] . " has met all guarantor requirements and is ready for review.";
+        sendNotification($loan_details['member_id'], 'Loan Update', $message, 'sms');
+    }
+}
+
+// Get guarantors with eligibility info
+function getGuarantorsWithEligibility($conn, $loan_id, $loan, $settings)
+{
+    $sql = "SELECT lg.*, m.full_name, m.member_no, m.phone,
+            (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
+             FROM deposits WHERE member_id = m.id) as savings,
+            (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as shares,
+            (SELECT COALESCE(SUM(guaranteed_amount), 0) 
+             FROM loan_guarantors lg2 
+             WHERE lg2.guarantor_member_id = m.id AND lg2.status IN ('pending', 'approved') AND lg2.loan_id != ?) as other_commitments
+            FROM loan_guarantors lg
+            JOIN members m ON lg.guarantor_member_id = m.id
+            WHERE lg.loan_id = ?
+            ORDER BY 
+                CASE lg.status 
+                    WHEN 'pending' THEN 1 
+                    WHEN 'approved' THEN 2 
+                    ELSE 3 
+                END,
+                lg.created_at ASC";
+
+    $result = $conn->prepare($sql);
+    $result->bind_param("ii", $loan_id, $loan_id);
+    $result->execute();
+    return $result->get_result();
+}
+
+// Get eligible members for new guarantor dropdown
+function getEligibleMembers($conn, $loan_id, $member_id)
+{
+    $sql = "SELECT m.id, m.member_no, m.full_name,
+            (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
+             FROM deposits WHERE member_id = m.id) as savings,
+            (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as shares
+            FROM members m
+            WHERE m.membership_status = 'active' 
+            AND m.id != ?
+            AND m.id NOT IN (
+                SELECT guarantor_member_id FROM loan_guarantors WHERE loan_id = ?
+            )
+            ORDER BY m.full_name";
+
+    $result = $conn->prepare($sql);
+    $result->bind_param("ii", $member_id, $loan_id);
+    $result->execute();
+    return $result->get_result();
+}
+
+$conn = getConnection();
+$guarantors = getGuarantorsWithEligibility($conn, $loan_id, $loan, $settings);
+$eligible_members = getEligibleMembers($conn, $loan_id, $loan['member_id']);
+
+// Get statistics
 $stats_sql = "SELECT 
               COUNT(*) as total,
               SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
@@ -282,25 +410,14 @@ $stats_sql = "SELECT
               COALESCE(SUM(CASE WHEN status = 'approved' THEN guaranteed_amount ELSE 0 END), 0) as total_approved_amount
               FROM loan_guarantors
               WHERE loan_id = ?";
-$stats_result = executeQuery($stats_sql, "i", [$loan_id]);
-$stats = $stats_result->fetch_assoc();
-
-// Get eligible members for new guarantor dropdown
-$eligible_members_sql = "SELECT m.id, m.member_no, m.full_name,
-                         (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as total_shares,
-                         (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
-                          FROM deposits WHERE member_id = m.id) as savings_balance
-                         FROM members m
-                         WHERE m.membership_status = 'active' 
-                         AND m.id NOT IN (
-                             SELECT guarantor_member_id FROM loan_guarantors WHERE loan_id = ?
-                         )
-                         AND m.id != ?
-                         ORDER BY m.full_name";
-$eligible_members = executeQuery($eligible_members_sql, "ii", [$loan_id, $loan['member_id']]);
+$stats_result = $conn->prepare($stats_sql);
+$stats_result->bind_param("i", $loan_id);
+$stats_result->execute();
+$stats = $stats_result->get_result()->fetch_assoc();
 
 include '../../includes/header.php';
 ?>
+
 
 <!-- Page Header -->
 <div class="page-header">

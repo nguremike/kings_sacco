@@ -1,76 +1,70 @@
 <?php
+// modules/loans/approvals.php
 require_once '../../config/config.php';
-requireRole('admin'); // Only admin and loan officers can approve loans
+requireRole('admin');
 
 $page_title = 'Loan Approvals';
+
+// Get system settings
+$settings = getLoanSettings();
 
 // Handle loan approval/rejection
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     $loan_id = $_POST['loan_id'];
     $action = $_POST['action'];
     $remarks = $_POST['remarks'] ?? '';
-    $approved_amount = $_POST['approved_amount'] ?? null;
-    $approved_interest = $_POST['approved_interest'] ?? null;
-    $approved_duration = $_POST['approved_duration'] ?? null;
 
+    processLoanAction($loan_id, $action, $remarks, $settings);
+}
+
+function getLoanSettings()
+{
+    $settings = [];
+    $result = executeQuery("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'loan_%' OR setting_key LIKE '%guarantor%'");
+    while ($row = $result->fetch_assoc()) {
+        $settings[$row['setting_key']] = $row['setting_value'];
+    }
+    return $settings;
+}
+
+function processLoanAction($loan_id, $action, $remarks, $settings)
+{
     $conn = getConnection();
     $conn->begin_transaction();
 
     try {
         if ($action == 'approve') {
-            // Update loan status to approved
+            // Get loan details
+            $loan = executeQuery("SELECT * FROM loans WHERE id = ?", "i", [$loan_id])->fetch_assoc();
+
+            // Record fees
+            if ($loan['processing_fee'] > 0) {
+                recordLoanFee($conn, $loan_id, $loan['member_id'], 'processing_fee', $loan['processing_fee']);
+            }
+
+            if ($loan['insurance_fee'] > 0) {
+                recordLoanFee($conn, $loan_id, $loan['member_id'], 'insurance_fee', $loan['insurance_fee']);
+            }
+
+            // Update loan status
             $sql = "UPDATE loans SET status = 'approved', approval_date = CURDATE(), approved_by = ?, remarks = ? WHERE id = ?";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param("isi", getCurrentUserId(), $remarks, $loan_id);
             $stmt->execute();
 
-            // Get loan details for notification
-            $loan_sql = "SELECT l.*, m.full_name, m.phone, m.member_no, lp.product_name 
-                        FROM loans l 
-                        JOIN members m ON l.member_id = m.id 
-                        JOIN loan_products lp ON l.product_id = lp.id 
-                        WHERE l.id = ?";
-            $loan_result = $conn->query($loan_sql);
-            $loan = $loan_result->fetch_assoc();
-
-            // Send notification to member
-            $message = "Dear {$loan['full_name']}, your loan application of KES " . number_format($loan['principal_amount']) . " has been APPROVED. You will be contacted for disbursement.";
-            sendNotification($loan['member_id'], 'Loan Approved', $message, 'sms');
+            // Create amortization schedule
+            createAmortizationSchedule($conn, $loan_id, $loan['principal_amount'], $loan['interest_rate'], $loan['duration_months']);
 
             logAudit('APPROVE', 'loans', $loan_id, ['status' => 'pending'], ['status' => 'approved']);
             $_SESSION['success'] = 'Loan approved successfully';
         } elseif ($action == 'reject') {
-            // Update loan status to rejected
             $sql = "UPDATE loans SET status = 'rejected', approved_by = ?, remarks = ? WHERE id = ?";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param("isi", getCurrentUserId(), $remarks, $loan_id);
             $stmt->execute();
 
-            // Get loan details for notification
-            $loan_sql = "SELECT l.*, m.full_name, m.phone, m.member_no 
-                        FROM loans l 
-                        JOIN members m ON l.member_id = m.id 
-                        WHERE l.id = ?";
-            $loan_result = $conn->query($loan_sql);
-            $loan = $loan_result->fetch_assoc();
-
-            // Send notification to member
-            $message = "Dear {$loan['full_name']}, your loan application has been reviewed and was not approved at this time. Remarks: {$remarks}";
-            sendNotification($loan['member_id'], 'Loan Application Update', $message, 'sms');
-
             logAudit('REJECT', 'loans', $loan_id, ['status' => 'pending'], ['status' => 'rejected']);
             $_SESSION['success'] = 'Loan rejected';
-        } elseif ($action == 'modify') {
-            // Update loan with modified terms
-            $sql = "UPDATE loans SET principal_amount = ?, interest_amount = ?, total_amount = ?, duration_months = ?, 
-                    status = 'approved', approval_date = CURDATE(), approved_by = ?, remarks = ? WHERE id = ?";
-            $total_amount = $approved_amount + $approved_interest;
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("dddiisi", $approved_amount, $approved_interest, $total_amount, $approved_duration, getCurrentUserId(), $remarks, $loan_id);
-            $stmt->execute();
-
-            logAudit('MODIFY', 'loans', $loan_id, null, $_POST);
-            $_SESSION['success'] = 'Loan modified and approved successfully';
         }
 
         $conn->commit();
@@ -84,52 +78,62 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     exit();
 }
 
-// Get pending loans with enhanced eligibility criteria
+function recordLoanFee($conn, $loan_id, $member_id, $fee_type, $amount)
+{
+    $reference_no = strtoupper(substr($fee_type, 0, 3)) . $loan_id . time();
+    $description = ucfirst(str_replace('_', ' ', $fee_type)) . " for loan #$loan_id";
+
+    $sql = "INSERT INTO admin_charges (member_id, charge_type, amount, charge_date, description, reference_no, loan_id, status, created_by)
+            VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'pending', ?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("isdssii", $member_id, $fee_type, $amount, $description, $reference_no, $loan_id, getCurrentUserId());
+    $stmt->execute();
+}
+
+function createAmortizationSchedule($conn, $loan_id, $principal, $rate, $months)
+{
+    $monthly_rate = $rate / 100 / 12;
+    $monthly_payment = ($principal * $monthly_rate * pow(1 + $monthly_rate, $months)) / (pow(1 + $monthly_rate, $months) - 1);
+
+    $balance = $principal;
+    $due_date = new DateTime();
+    $due_date->modify('+1 month');
+
+    for ($i = 1; $i <= $months; $i++) {
+        $interest = $balance * $monthly_rate;
+        $principal_paid = $monthly_payment - $interest;
+        $balance -= $principal_paid;
+
+        if ($balance < 0) $balance = 0;
+
+        $sql = "INSERT INTO amortization_schedule (loan_id, installment_no, due_date, principal, interest, total_payment, balance, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("iisdddd", $loan_id, $i, $due_date->format('Y-m-d'), $principal_paid, $interest, $monthly_payment, $balance);
+        $stmt->execute();
+
+        $due_date->modify('+1 month');
+    }
+}
+
+// Get pending loans with enhanced eligibility
 $pending_sql = "SELECT l.*, 
-                m.full_name, m.member_no, m.phone, m.email, m.date_joined,
-                lp.product_name, lp.interest_rate as product_rate, lp.max_amount,
+                m.full_name, m.member_no, m.date_joined,
+                lp.product_name, lp.interest_rate as product_rate,
+                lp.min_savings_balance, lp.max_loans_active,
+                lp.guarantor_required, lp.min_guarantors,
                 (SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = l.id) as guarantor_count,
                 (SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = l.id AND status = 'approved') as approved_guarantors,
                 (SELECT COALESCE(SUM(guaranteed_amount), 0) FROM loan_guarantors WHERE loan_id = l.id AND status = 'approved') as total_guaranteed,
                 (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
-                 FROM deposits WHERE member_id = l.member_id) as member_deposits,
-                (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = l.member_id) as member_shares,
+                 FROM deposits WHERE member_id = l.member_id) as member_savings,
                 TIMESTAMPDIFF(MONTH, m.date_joined, CURDATE()) as membership_months
                 FROM loans l
                 JOIN members m ON l.member_id = m.id
                 JOIN loan_products lp ON l.product_id = lp.id
                 WHERE l.status IN ('pending', 'guarantor_pending')
-                ORDER BY 
-                    CASE l.status 
-                        WHEN 'guarantor_pending' THEN 1 
-                        WHEN 'pending' THEN 2 
-                        ELSE 3 
-                    END,
-                    l.created_at ASC";
+                ORDER BY l.created_at ASC";
 $pending_loans = executeQuery($pending_sql);
-
-// Get recently approved/rejected loans (last 30 days)
-$recent_sql = "SELECT l.*, m.full_name, m.member_no, u.full_name as approved_by_name,
-               (SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = l.id) as guarantor_count
-               FROM loans l
-               JOIN members m ON l.member_id = m.id
-               LEFT JOIN users u ON l.approved_by = u.id
-               WHERE l.status IN ('approved', 'rejected')
-               AND l.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-               ORDER BY l.created_at DESC
-               LIMIT 20";
-$recent_loans = executeQuery($recent_sql);
-
-// Get statistics
-$stats_sql = "SELECT 
-              SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-              SUM(CASE WHEN status = 'guarantor_pending' THEN 1 ELSE 0 END) as guarantor_pending_count,
-              SUM(CASE WHEN status = 'approved' AND MONTH(approval_date) = MONTH(NOW()) THEN 1 ELSE 0 END) as approved_this_month,
-              SUM(CASE WHEN status = 'rejected' AND MONTH(created_at) = MONTH(NOW()) THEN 1 ELSE 0 END) as rejected_this_month,
-              COALESCE(SUM(CASE WHEN status IN ('pending', 'guarantor_pending') THEN principal_amount ELSE 0 END), 0) as total_pending_amount
-              FROM loans";
-$stats_result = executeQuery($stats_sql);
-$stats = $stats_result->fetch_assoc();
 
 include '../../includes/header.php';
 ?>

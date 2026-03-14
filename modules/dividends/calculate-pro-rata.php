@@ -231,21 +231,34 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $column_check = $conn->query("SHOW COLUMNS FROM dividends LIKE 'adjusted_opening'");
             $has_columns = $column_check && $column_check->num_rows > 0;
 
-            // Get current user ID once
+            // In calculate-pro-rata.php, find the section where dividends are inserted
+            // Replace the existing dividend insertion code with this:
+
+            // Get current user ID with validation
             $current_user_id = getCurrentUserId();
-            // Debug: Check if user ID is valid
+
+            // Validate user ID exists
             if (!$current_user_id || $current_user_id <= 0) {
-                // Fallback to a default admin user (usually ID 1)
-                $check_admin = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
-                if ($check_admin && $check_admin->num_rows > 0) {
-                    $admin = $check_admin->fetch_assoc();
+                // Try to get first admin user as fallback
+                $admin_query = $conn->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+                if ($admin_query && $admin_query->num_rows > 0) {
+                    $admin = $admin_query->fetch_assoc();
                     $current_user_id = $admin['id'];
+                    error_log("Dividend calculation: Using fallback admin user ID: $current_user_id");
                 } else {
-                    throw new Exception("No valid user found to associate with dividend calculation");
+                    // If no admin found, try any user
+                    $any_user = $conn->query("SELECT id FROM users LIMIT 1");
+                    if ($any_user && $any_user->num_rows > 0) {
+                        $user = $any_user->fetch_assoc();
+                        $current_user_id = $user['id'];
+                        error_log("Dividend calculation: Using fallback any user ID: $current_user_id");
+                    } else {
+                        throw new Exception("No users found in the system to associate with dividend calculation");
+                    }
                 }
             }
 
-            // Optional: Verify the user actually exists
+            // Double-check the user exists
             $user_check = $conn->prepare("SELECT id FROM users WHERE id = ?");
             $user_check->bind_param("i", $current_user_id);
             $user_check->execute();
@@ -256,18 +269,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             $calculation_method = 'kenya_sacco_pro_rata';
 
+            // Check if the adjusted_opening column exists
+            $column_check = $conn->query("SHOW COLUMNS FROM dividends LIKE 'adjusted_opening'");
+            $has_columns = $column_check && $column_check->num_rows > 0;
+
             if ($has_columns) {
                 // Full insert with all Kenya SACCO columns
                 $insert_sql = "INSERT INTO dividends 
-                              (member_id, financial_year, opening_balance, adjusted_opening,
-                               total_withdrawals, total_penalties, total_charges, total_deposits, 
-                               interest_rate, gross_dividend, withholding_tax, net_dividend, 
-                               status, eligibility_months, calculation_method, calculated_by, calculated_at)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?, ?, ?, NOW())";
+                  (member_id, financial_year, opening_balance, adjusted_opening,
+                   total_withdrawals, total_penalties, total_charges, total_deposits, 
+                   interest_rate, gross_dividend, withholding_tax, net_dividend, 
+                   status, eligibility_months, calculation_method, calculated_by, calculated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?, ?, ?, NOW())";
 
                 $insert_stmt = $conn->prepare($insert_sql);
 
-                // FIXED: Use variables instead of direct values
+                if (!$insert_stmt) {
+                    throw new Exception("Failed to prepare insert statement: " . $conn->error);
+                }
+
                 $insert_stmt->bind_param(
                     "isddddddddddiis",
                     $member['id'],              // i - integer
@@ -283,20 +303,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $withholding_tax,             // d - double
                     $net_dividend,                 // d - double
                     $active_months,                // i - integer
-                    $current_user_id,              // i - integer
+                    $current_user_id,              // i - integer (VALIDATED)
                     $calculation_method            // s - string
                 );
             } else {
                 // Minimal insert without Kenya-specific columns
                 $insert_sql = "INSERT INTO dividends 
-                              (member_id, financial_year, opening_balance, total_deposits, 
-                               interest_rate, gross_dividend, withholding_tax, net_dividend, 
-                               status, eligibility_months, calculation_method, calculated_by, calculated_at)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?, ?, ?, NOW())";
+                  (member_id, financial_year, opening_balance, total_deposits, 
+                   interest_rate, gross_dividend, withholding_tax, net_dividend, 
+                   status, eligibility_months, calculation_method, calculated_by, calculated_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?, ?, ?, NOW())";
 
                 $insert_stmt = $conn->prepare($insert_sql);
 
-                // FIXED: Use variables instead of direct values
+                if (!$insert_stmt) {
+                    throw new Exception("Failed to prepare insert statement: " . $conn->error);
+                }
+
                 $insert_stmt->bind_param(
                     "isddddddiis",
                     $member['id'],              // i - integer
@@ -308,10 +331,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $withholding_tax,             // d - double
                     $net_dividend,                 // d - double
                     $active_months,                // i - integer
-                    $current_user_id,              // i - integer
+                    $current_user_id,              // i - integer (VALIDATED)
                     $calculation_method            // s - string
                 );
             }
+
 
             if (!$insert_stmt->execute()) {
                 throw new Exception("Failed to insert dividend: " . $insert_stmt->error);

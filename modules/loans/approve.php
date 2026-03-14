@@ -1,17 +1,18 @@
 <?php
+// modules/loans/approve.php
 require_once '../../config/config.php';
 requireRole('admin');
 
 $id = $_GET['id'] ?? 0;
 
-// Get loan details with enhanced information
-$sql = "SELECT l.*, 
-        m.full_name, m.member_no, m.national_id, m.phone, m.email, m.date_joined,
+// Get system settings
+$settings = getLoanSettings();
+
+// Get loan details
+$sql = "SELECT l.*, m.full_name, m.member_no, m.date_joined, m.id as member_id,
+        m.national_id, m.phone, m.email,
         lp.product_name, lp.interest_rate as product_rate,
-        (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
-         FROM deposits WHERE member_id = m.id) as member_deposits,
-        (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as member_shares,
-        TIMESTAMPDIFF(MONTH, m.date_joined, CURDATE()) as membership_months
+        lp.processing_fee, lp.insurance_fee, lp.min_savings_balance, lp.max_loans_active
         FROM loans l 
         JOIN members m ON l.member_id = m.id 
         JOIN loan_products lp ON l.product_id = lp.id 
@@ -26,108 +27,237 @@ if ($result->num_rows == 0) {
 
 $loan = $result->fetch_assoc();
 
+// Get member financial status
+$member_stats = getMemberFinancialStatus($loan['member_id']);
+
 // Get guarantor information
-$guarantors_sql = "SELECT 
-                   COUNT(*) as total_count,
-                   SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_count,
-                   COALESCE(SUM(CASE WHEN status = 'approved' THEN guaranteed_amount ELSE 0 END), 0) as total_guaranteed
-                   FROM loan_guarantors 
-                   WHERE loan_id = ?";
-$guarantors_result = executeQuery($guarantors_sql, "i", [$id]);
-$guarantor_data = $guarantors_result->fetch_assoc();
+$guarantors = getGuarantorInfo($id);
 
-// Get detailed guarantor list
-$guarantor_list_sql = "SELECT lg.*, m.full_name, m.member_no, m.phone,
-                       (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as guarantor_shares,
-                       (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
-                        FROM deposits WHERE member_id = m.id) as guarantor_savings
-                       FROM loan_guarantors lg
-                       JOIN members m ON lg.guarantor_member_id = m.id
-                       WHERE lg.loan_id = ?
-                       ORDER BY lg.status, lg.created_at";
-$guarantor_list = executeQuery($guarantor_list_sql, "i", [$id]);
-
-// Calculate eligibility with new rules
-$membership_eligible = $loan['membership_months'] >= 6;
-$guarantor_coverage = $guarantor_data['total_guaranteed'] ?? 0;
-$guarantor_count = $guarantor_data['approved_count'] ?? 0;
-$self_guarantee_limit = $loan['member_deposits'] * 3;
-$self_guarantee_eligible = $self_guarantee_limit >= $loan['principal_amount'];
-
-// Determine if loan can be approved
-$can_approve = false;
-$approval_method = '';
-$approval_details = [];
-
-if (!$membership_eligible) {
-    $approval_details[] = "❌ Membership duration: {$loan['membership_months']} months (need 6+)";
-} else {
-    $approval_details[] = "✅ Membership duration: {$loan['membership_months']} months";
-}
-
-// Check guarantor coverage
-if ($guarantor_coverage >= $loan['principal_amount']) {
-    $can_approve = true;
-    $approval_method = 'guarantor';
-    $approval_details[] = "✅ Guarantor coverage: " . formatCurrency($guarantor_coverage) . " (Fully covered)";
-} else {
-    $approval_details[] = "❌ Guarantor coverage: " . formatCurrency($guarantor_coverage) . " (Need " . formatCurrency($loan['principal_amount'] - $guarantor_coverage) . " more)";
-}
-
-// Check self-guarantee
-if ($self_guarantee_eligible) {
-    $can_approve = true;
-    $approval_method = 'self';
-    $approval_details[] = "✅ Self-guarantee: Deposits " . formatCurrency($loan['member_deposits']) . " × 3 = " . formatCurrency($self_guarantee_limit) . " (Sufficient)";
-} else {
-    $approval_details[] = "❌ Self-guarantee: Need deposits of " . formatCurrency($loan['principal_amount'] / 3) . " (Current: " . formatCurrency($loan['member_deposits']) . ")";
-}
-
-// Final eligibility
-$eligible = $membership_eligible && $can_approve;
+// Check eligibility with system settings
+$eligibility = checkApprovalEligibility($loan, $member_stats, $guarantors, $settings);
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $action = $_POST['action'];
 
     if ($action == 'approve') {
+        approveLoan($id, $loan, $settings);
+    } elseif ($action == 'reject') {
+        rejectLoan($id, $loan);
+    }
+}
+
+function getLoanSettings()
+{
+    $settings = [];
+    $result = executeQuery("SELECT setting_key, setting_value FROM system_settings WHERE setting_key LIKE 'loan_%' OR setting_key LIKE '%guarantor%'");
+    while ($row = $result->fetch_assoc()) {
+        $settings[$row['setting_key']] = $row['setting_value'];
+    }
+    return $settings;
+}
+
+function getMemberFinancialStatus($member_id)
+{
+    $stats = [];
+
+    // Get savings balance
+    $savings = executeQuery("SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) as balance 
+                            FROM deposits WHERE member_id = ?", "i", [$member_id])->fetch_assoc()['balance'];
+    $stats['savings_balance'] = $savings;
+
+    // Get shares value
+    $shares = executeQuery("SELECT COALESCE(SUM(total_value), 0) as total FROM shares WHERE member_id = ?", "i", [$member_id])->fetch_assoc()['total'];
+    $stats['shares_value'] = $shares;
+
+    // Get active loans count
+    $active_loans = executeQuery("SELECT COUNT(*) as count FROM loans WHERE member_id = ? AND status IN ('active', 'disbursed')", "i", [$member_id])->fetch_assoc()['count'];
+    $stats['active_loans'] = $active_loans;
+
+    // Get previous loans performance
+    $previous_loans = executeQuery("SELECT COUNT(*) as count, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed 
+                                   FROM loans WHERE member_id = ?", "i", [$member_id])->fetch_assoc();
+    $stats['previous_loans'] = $previous_loans['count'];
+    $stats['completed_loans'] = $previous_loans['completed'];
+
+    return $stats;
+}
+
+function getGuarantorInfo($loan_id)
+{
+    $guarantors = executeQuery("SELECT lg.*, m.full_name, m.member_no, m.phone,
+                               (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'deposit' THEN amount ELSE -amount END), 0) 
+                                FROM deposits WHERE member_id = m.id) as savings,
+                               (SELECT COALESCE(SUM(total_value), 0) FROM shares WHERE member_id = m.id) as shares
+                               FROM loan_guarantors lg
+                               JOIN members m ON lg.guarantor_member_id = m.id
+                               WHERE lg.loan_id = ?", "i", [$loan_id]);
+
+    $data = [];
+    while ($g = $guarantors->fetch_assoc()) {
+        $data[] = $g;
+    }
+
+    // Calculate totals
+    $total_approved = 0;
+    $approved_count = 0;
+    foreach ($data as $g) {
+        if ($g['status'] == 'approved') {
+            $total_approved += $g['guaranteed_amount'];
+            $approved_count++;
+        }
+    }
+
+    return [
+        'list' => $data,
+        'total_approved' => $total_approved,
+        'approved_count' => $approved_count
+    ];
+}
+
+function checkApprovalEligibility($loan, $member_stats, $guarantors, $settings)
+{
+    $eligible = true;
+    $reasons = [];
+    $warnings = [];
+
+    // Check savings balance requirement
+    $min_savings = $loan['min_savings_balance'] ?? ($settings['min_savings_balance'] ?? 0);
+    if ($member_stats['savings_balance'] < $min_savings) {
+        $eligible = false;
+        $reasons[] = "Insufficient savings: " . formatCurrency($member_stats['savings_balance']) .
+            " (required: " . formatCurrency($min_savings) . ")";
+    }
+
+    // Check maximum active loans
+    $max_active = $loan['max_loans_active'] ?? ($settings['max_loans_active'] ?? 1);
+    if ($member_stats['active_loans'] >= $max_active) {
+        $eligible = false;
+        $reasons[] = "Member already has {$member_stats['active_loans']} active loan(s) (maximum: $max_active)";
+    }
+
+    // Check guarantor requirements
+    $guarantor_required = $loan['guarantor_required'] ?? ($settings['guarantor_required'] ?? 1);
+    $min_guarantors = $loan['min_guarantors'] ?? ($settings['min_guarantors'] ?? 1);
+
+    if ($guarantor_required && $guarantors['approved_count'] < $min_guarantors) {
+        // Check if self-guarantee is enabled
+        $self_guarantee_enabled = $settings['enable_self_guarantee'] ?? 1;
+        $self_multiplier = $settings['self_guarantee_multiplier'] ?? 3;
+
+        $self_guarantee_limit = $member_stats['savings_balance'] * $self_multiplier;
+
+        if ($self_guarantee_enabled && $self_guarantee_limit >= $loan['principal_amount']) {
+            $warnings[] = "Using self-guarantee (savings × $self_multiplier = " . formatCurrency($self_guarantee_limit) . ")";
+        } else {
+            $eligible = false;
+            $reasons[] = "Insufficient guarantors: {$guarantors['approved_count']} approved (need $min_guarantors)";
+        }
+    }
+
+    // Check guarantor coverage
+    if ($guarantors['total_approved'] < $loan['principal_amount'] && !($self_guarantee_enabled ?? false)) {
+        $eligible = false;
+        $reasons[] = "Insufficient guarantor coverage: " . formatCurrency($guarantors['total_approved']) .
+            " (need " . formatCurrency($loan['principal_amount']) . ")";
+    }
+
+    // Check if loan exceeds auto-approve threshold
+    $auto_approve_threshold = $settings['auto_approve_threshold'] ?? 0;
+    if ($auto_approve_threshold > 0 && $loan['principal_amount'] > $auto_approve_threshold) {
+        $warnings[] = "Loan exceeds auto-approve threshold of " . formatCurrency($auto_approve_threshold);
+    }
+
+    return [
+        'eligible' => $eligible,
+        'reasons' => $reasons,
+        'warnings' => $warnings
+    ];
+}
+
+function approveLoan($loan_id, $loan, $settings)
+{
+    $conn = getConnection();
+    $conn->begin_transaction();
+
+    try {
+        // Record processing and insurance fees if not already recorded
+        if ($loan['processing_fee'] > 0) {
+            recordLoanFee($conn, $loan_id, $loan['member_id'], 'processing_fee', $loan['processing_fee'], $loan['principal_amount']);
+        }
+
+        if ($loan['insurance_fee'] > 0) {
+            recordLoanFee($conn, $loan_id, $loan['member_id'], 'insurance_fee', $loan['insurance_fee'], $loan['principal_amount']);
+        }
+
         // Update loan status
         $updateSql = "UPDATE loans SET status = 'approved', approval_date = CURDATE(), approved_by = ? WHERE id = ?";
-        executeQuery($updateSql, "ii", [getCurrentUserId(), $id]);
+        executeQuery($updateSql, "ii", [getCurrentUserId(), $loan_id]);
 
         // Create amortization schedule
-        createAmortizationSchedule($id, $loan['principal_amount'], $loan['interest_rate'], $loan['duration_months']);
+        createAmortizationSchedule($conn, $loan_id, $loan['principal_amount'], $loan['interest_rate'], $loan['duration_months']);
 
-        // Send notification to member
-        $approval_message = "Dear {$loan['full_name']}, your loan of " . formatCurrency($loan['principal_amount']) . " has been APPROVED. ";
-        if ($approval_method == 'self') {
-            $approval_message .= "This loan was approved based on your savings balance (self-guarantee). ";
-        } else {
-            $approval_message .= "The loan is guaranteed by " . $guarantor_count . " guarantor(s). ";
-        }
-        $approval_message .= "You will be contacted for disbursement.";
+        $conn->commit();
 
-        sendNotification($loan['member_id'], 'Loan Approved', $approval_message, 'sms');
-
-        logAudit('APPROVE', 'loans', $id, null, $loan);
-        $_SESSION['success'] = 'Loan approved successfully via ' . ($approval_method == 'self' ? 'self-guarantee' : 'guarantor coverage');
-    } elseif ($action == 'reject') {
-        $rejection_reason = $_POST['rejection_reason'] ?? '';
-        $updateSql = "UPDATE loans SET status = 'rejected' WHERE id = ?";
-        executeQuery($updateSql, "i", [$id]);
-
-        // Send notification to member
-        $rejection_message = "Dear {$loan['full_name']}, your loan application has been reviewed and was not approved. ";
-        if (!empty($rejection_reason)) {
-            $rejection_message .= "Reason: " . $rejection_reason;
-        }
-        sendNotification($loan['member_id'], 'Loan Update', $rejection_message, 'sms');
-
-        logAudit('REJECT', 'loans', $id, null, $loan);
-        $_SESSION['success'] = 'Loan rejected';
+        logAudit('APPROVE', 'loans', $loan_id, null, $loan);
+        $_SESSION['success'] = 'Loan approved successfully';
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['error'] = 'Approval failed: ' . $e->getMessage();
     }
+
+    $conn->close();
+    header('Location: index.php');
+    exit();
+}
+
+function rejectLoan($loan_id, $loan)
+{
+    $updateSql = "UPDATE loans SET status = 'rejected' WHERE id = ?";
+    executeQuery($updateSql, "i", [$loan_id]);
+
+    logAudit('REJECT', 'loans', $loan_id, null, $loan);
+    $_SESSION['success'] = 'Loan rejected';
 
     header('Location: index.php');
     exit();
+}
+
+function recordLoanFee($conn, $loan_id, $member_id, $fee_type, $amount, $principal)
+{
+    $reference_no = strtoupper(substr($fee_type, 0, 3)) . $loan_id . time();
+    $description = ucfirst(str_replace('_', ' ', $fee_type)) . " for loan #$loan_id";
+
+    $sql = "INSERT INTO admin_charges (member_id, charge_type, amount, charge_date, description, reference_no, loan_id, status, created_by)
+            VALUES (?, ?, ?, CURDATE(), ?, ?, ?, 'pending', ?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("isdssii", $member_id, $fee_type, $amount, $description, $reference_no, $loan_id, getCurrentUserId());
+    $stmt->execute();
+}
+
+function createAmortizationSchedule($conn, $loan_id, $principal, $rate, $months)
+{
+    $monthly_rate = $rate / 100 / 12;
+    $monthly_payment = ($principal * $monthly_rate * pow(1 + $monthly_rate, $months)) / (pow(1 + $monthly_rate, $months) - 1);
+
+    $balance = $principal;
+    $due_date = new DateTime();
+    $due_date->modify('+1 month');
+
+    for ($i = 1; $i <= $months; $i++) {
+        $interest = $balance * $monthly_rate;
+        $principal_paid = $monthly_payment - $interest;
+        $balance -= $principal_paid;
+
+        if ($balance < 0) $balance = 0;
+
+        $sql = "INSERT INTO amortization_schedule (loan_id, installment_no, due_date, principal, interest, total_payment, balance, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("iisdddd", $loan_id, $i, $due_date->format('Y-m-d'), $principal_paid, $interest, $monthly_payment, $balance);
+        $stmt->execute();
+
+        $due_date->modify('+1 month');
+    }
 }
 
 $page_title = 'Approve Loan - ' . $loan['loan_no'];
@@ -579,38 +709,38 @@ include '../../includes/header.php';
 
 <?php
 // Function to create amortization schedule
-function createAmortizationSchedule($loan_id, $principal, $rate, $months)
-{
-    $monthly_rate = $rate / 100 / 12;
-    $monthly_payment = ($principal * $monthly_rate * pow(1 + $monthly_rate, $months)) / (pow(1 + $monthly_rate, $months) - 1);
+// function createAmortizationSchedule($loan_id, $principal, $rate, $months)
+// {
+//     $monthly_rate = $rate / 100 / 12;
+//     $monthly_payment = ($principal * $monthly_rate * pow(1 + $monthly_rate, $months)) / (pow(1 + $monthly_rate, $months) - 1);
 
-    $balance = $principal;
-    $due_date = new DateTime();
-    $due_date->modify('+1 month');
+//     $balance = $principal;
+//     $due_date = new DateTime();
+//     $due_date->modify('+1 month');
 
-    for ($i = 1; $i <= $months; $i++) {
-        $interest = $balance * $monthly_rate;
-        $principal_paid = $monthly_payment - $interest;
-        $balance -= $principal_paid;
+//     for ($i = 1; $i <= $months; $i++) {
+//         $interest = $balance * $monthly_rate;
+//         $principal_paid = $monthly_payment - $interest;
+//         $balance -= $principal_paid;
 
-        if ($balance < 0) $balance = 0;
+//         if ($balance < 0) $balance = 0;
 
-        $sql = "INSERT INTO amortization_schedule (loan_id, installment_no, due_date, principal, interest, total_payment, balance, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
+//         $sql = "INSERT INTO amortization_schedule (loan_id, installment_no, due_date, principal, interest, total_payment, balance, status) 
+//                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
 
-        executeQuery($sql, "iisdddd", [
-            $loan_id,
-            $i,
-            $due_date->format('Y-m-d'),
-            $principal_paid,
-            $interest,
-            $monthly_payment,
-            $balance
-        ]);
+//         executeQuery($sql, "iisdddd", [
+//             $loan_id,
+//             $i,
+//             $due_date->format('Y-m-d'),
+//             $principal_paid,
+//             $interest,
+//             $monthly_payment,
+//             $balance
+//         ]);
 
-        $due_date->modify('+1 month');
-    }
-}
+//         $due_date->modify('+1 month');
+//     }
+// }
 ?>
 
 <style>

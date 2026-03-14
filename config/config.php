@@ -54,8 +54,10 @@ function getCurrentUserId()
         return (int)$_SESSION['user_id'];
     }
 
-    // If not logged in or invalid, return null or throw exception
-    // For API calls or background processes, you might need a different approach
+    // For debugging, you can log when this happens
+    error_log("Warning: getCurrentUserId() called but no valid user ID in session");
+
+    // Return null instead of 0 to help with validation
     return null;
 }
 

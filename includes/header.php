@@ -267,12 +267,12 @@
                             <i class="fas fa-chart-line"></i> Dashboard
                         </a>
 
-                        <a href="<?php echo APP_URL; ?>/modules/accounting/chart-of-accounts.php" class="submenu-item">
-                            <i class="fas fa-list"></i> Chart of Accounts
+                        <a href="<?php echo APP_URL; ?>/modules/admin_charges/index.php" class="submenu-item">
+                            <i class="fa-solid fa-file-invoice-dollar"></i> Admin Charges
                         </a>
 
-                        <a href="<?php echo APP_URL; ?>/modules/accounting/journal.php" class="submenu-item">
-                            <i class="fas fa-book-open"></i> Journal
+                        <a href="<?php echo APP_URL; ?>/modules/penalties/index.php" class="submenu-item">
+                            <i class="fas fa-book-open"></i> Penalties
                         </a>
 
                         <a href="<?php echo APP_URL; ?>/modules/accounting/expenses.php" class="submenu-item">
