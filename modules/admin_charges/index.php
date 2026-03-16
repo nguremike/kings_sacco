@@ -135,10 +135,13 @@ include '../../includes/header.php';
         <form method="GET" action="" class="row g-3">
             <div class="col-md-2">
                 <label for="member_id" class="form-label">Member</label>
-                <select class="form-control" id="member_id" name="member_id">
-                    <option value="">All Members</option>
-                    <?php while ($m = $members->fetch_assoc()): ?>
-                        <option value="<?php echo $m['id']; ?>" <?php echo $member_id == $m['id'] ? 'selected' : ''; ?>>
+                <select class="form-control select2" name="member_id" id="member_select" required style="width: 100%;">
+                    <option value="">-- Select Member --</option>
+                    <?php
+                    $all_members = executeQuery("SELECT id, member_no, full_name FROM members WHERE membership_status = 'active' ORDER BY member_no");
+                    while ($m = $all_members->fetch_assoc()):
+                    ?>
+                        <option value="<?php echo $m['id']; ?>">
                             <?php echo $m['member_no']; ?> - <?php echo $m['full_name']; ?>
                         </option>
                     <?php endwhile; ?>
@@ -760,6 +763,8 @@ include '../../includes/header.php';
             });
         }
     });
+
+    // Basic initialization
 </script>
 
 <style>
@@ -807,3 +812,13 @@ include '../../includes/header.php';
 </style>
 
 <?php include '../../includes/footer.php'; ?>
+
+<script>
+    $(document).ready(function() {
+        $('#member_select').select2({
+            placeholder: '-- Select Member --',
+            allowClear: true,
+            width: '100%'
+        });
+    });
+</script>

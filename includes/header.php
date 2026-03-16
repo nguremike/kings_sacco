@@ -271,6 +271,12 @@
                             <i class="fa-solid fa-file-invoice-dollar"></i> Admin Charges
                         </a>
 
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/year-end-processing.php" class="submenu-item">
+                            <i class="fas fa-chart-area"></i> Year End Processing
+                        </a>
+
+
+
                         <a href="<?php echo APP_URL; ?>/modules/penalties/index.php" class="submenu-item">
                             <i class="fas fa-book-open"></i> Penalties
                         </a>
@@ -282,6 +288,8 @@
                         <a href="<?php echo APP_URL; ?>/modules/accounting/income.php" class="submenu-item">
                             <i class="fas fa-money-bill-wave"></i> Income
                         </a>
+
+
 
                     </div>
                 </div>
