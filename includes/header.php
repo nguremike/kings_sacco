@@ -271,6 +271,10 @@
                             <i class="fa-solid fa-file-invoice-dollar"></i> Admin Charges
                         </a>
 
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/share-capital-charge.php" class="submenu-item">
+                            <i class="fa-solid fa-file-invoice-dollar"></i> Share Capital Charges
+                        </a>
+
                         <a href="<?php echo APP_URL; ?>/modules/accounting/year-end-processing.php" class="submenu-item">
                             <i class="fas fa-chart-area"></i> Year End Processing
                         </a>
