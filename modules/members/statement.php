@@ -383,7 +383,7 @@ include '../../includes/header.php';
             </div>
         </div>
 
-        <?php if ($shares_issued->num_rows > 0): ?>
+        <?php if ($shares_issued->num_rows < 0): ?>
             <div class="mt-3">
                 <h6>Share Certificates</h6>
                 <div class="table-responsive">

@@ -110,7 +110,7 @@ function runYearEndProcessing(
             }
         }
 
-        // Update processing log
+        // Update processing log - FIXED: 6 parameters total
         $update_log_sql = "UPDATE year_end_processing_log 
                           SET members_processed = ?, 
                               total_admin_charges = ?,
@@ -120,13 +120,23 @@ function runYearEndProcessing(
                               error_log = ?
                           WHERE id = ?";
         $update_log_stmt = $conn->prepare($update_log_sql);
+
+        if (!$update_log_stmt) {
+            throw new Exception("Failed to prepare update statement: " . $conn->error);
+        }
+
         $total_members = $results['admin_charges']['count'] + $results['share_charges']['count'];
         $error_log = implode("\n", $results['errors']);
+        $admin_total = $results['admin_charges']['total'];
+        $share_total = $results['share_charges']['total'];
+
+        // FIXED: 6 parameters with correct types: i, d, d, s, i
+        // i = integer, d = double, s = string, i = integer
         $update_log_stmt->bind_param(
-            "iddssi",
+            "iddsi",  // i for members_processed, d for admin_total, d for share_total, s for error_log, i for log_id
             $total_members,
-            $results['admin_charges']['total'],
-            $results['share_charges']['total'],
+            $admin_total,
+            $share_total,
             $error_log,
             $log_id
         );
@@ -148,9 +158,12 @@ function runYearEndProcessing(
                               SET status = 'failed', error_log = ? 
                               WHERE id = ?";
             $error_log_stmt = $conn->prepare($error_log_sql);
-            $error_msg = $e->getMessage();
-            $error_log_stmt->bind_param("si", $error_msg, $log_id);
-            $error_log_stmt->execute();
+            if ($error_log_stmt) {
+                $error_msg = $e->getMessage();
+                // FIXED: 2 parameters: s, i
+                $error_log_stmt->bind_param("si", $error_msg, $log_id);
+                $error_log_stmt->execute();
+            }
         }
 
         return [

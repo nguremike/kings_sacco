@@ -88,16 +88,6 @@ if (!empty($month)) {
     $deposits = executeQuery($deposits_sql, "ii", [$member_id, $year]);
 }
 
-// Get ALL loans for the member (for lifetime loan summary)
-$all_loans_sql = "SELECT l.*, lp.product_name,
-                  (SELECT COALESCE(SUM(amount_paid), 0) FROM loan_repayments WHERE loan_id = l.id) as amount_paid,
-                  (l.total_amount - (SELECT COALESCE(SUM(amount_paid), 0) FROM loan_repayments WHERE loan_id = l.id)) as remaining_balance
-                  FROM loans l
-                  LEFT JOIN loan_products lp ON l.product_id = lp.id
-                  WHERE l.member_id = ?
-                  ORDER BY l.application_date DESC";
-$all_loans = executeQuery($all_loans_sql, "i", [$member_id]);
-
 // Get loan payments for the year
 $loan_payments_sql = "SELECT lr.*, l.loan_no, l.principal_amount as loan_principal
                       FROM loan_repayments lr
@@ -112,27 +102,16 @@ if (!empty($month)) {
 
 // Get loan summary
 $loan_summary_sql = "SELECT 
-                     COUNT(*) as total_loans,
-                     COALESCE(SUM(principal_amount), 0) as total_principal,
-                     COALESCE(SUM(interest_amount), 0) as total_interest,
-                     COALESCE(SUM(total_amount), 0) as total_amount,
-                     SUM(CASE WHEN status IN ('active', 'disbursed') THEN 
-                         (total_amount - COALESCE((SELECT SUM(amount_paid) FROM loan_repayments WHERE loan_id = loans.id), 0))
-                         ELSE 0 END) as outstanding_balance
-                     FROM loans 
-                     WHERE member_id = ?";
-$loan_summary_result = executeQuery($loan_summary_sql, "i", [$member_id]);
-$loan_summary = $loan_summary_result->fetch_assoc();
-
-// Get active loans
-$active_loans_sql = "SELECT l.*, lp.product_name,
-                     (SELECT COALESCE(SUM(amount_paid), 0) FROM loan_repayments WHERE loan_id = l.id) as amount_paid,
-                     (l.total_amount - (SELECT COALESCE(SUM(amount_paid), 0) FROM loan_repayments WHERE loan_id = l.id)) as remaining_balance
+                     COUNT(DISTINCT l.id) as loans_active,
+                     COUNT(lr.id) as payment_count,
+                     COALESCE(SUM(lr.amount_paid), 0) as total_payments,
+                     COALESCE(SUM(lr.principal_paid), 0) as total_principal_paid,
+                     COALESCE(SUM(lr.interest_paid), 0) as total_interest_paid
                      FROM loans l
-                     LEFT JOIN loan_products lp ON l.product_id = lp.id
-                     WHERE l.member_id = ? AND l.status IN ('disbursed', 'active')
-                     ORDER BY l.disbursement_date DESC";
-$active_loans = executeQuery($active_loans_sql, "i", [$member_id]);
+                     LEFT JOIN loan_repayments lr ON l.id = lr.loan_id AND YEAR(lr.payment_date) = ?
+                     WHERE l.member_id = ?";
+$loan_summary_result = executeQuery($loan_summary_sql, "ii", [$year, $member_id]);
+$loan_summary = $loan_summary_result->fetch_assoc();
 
 // Get current year totals
 $year_totals_sql = "SELECT 
@@ -146,7 +125,7 @@ $year_totals = $year_totals_result->fetch_assoc();
 // Calculate closing balance
 $closing_balance = $opening_balance + $year_totals['total_deposits'] - $year_totals['total_withdrawals'];
 
-// Format functions
+// Format date function for print
 function formatDatePrint($date)
 {
     if (empty($date) || $date == '0000-00-00') {
@@ -159,11 +138,7 @@ function formatCurrencyPrint($amount)
 {
     return 'KES ' . number_format($amount, 2);
 }
-
-$page_title = 'Member Statement - ' . $member['full_name'];
-include '../../includes/header.php';
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -304,43 +279,6 @@ include '../../includes/header.php';
                 padding: 0;
             }
         }
-
-        .loan-status {
-            font-size: 10px;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 9px;
-            font-weight: bold;
-        }
-
-        .badge-success {
-            background: #28a745;
-            color: white;
-        }
-
-        .badge-warning {
-            background: #ffc107;
-            color: #333;
-        }
-
-        .badge-danger {
-            background: #dc3545;
-            color: white;
-        }
-
-        .badge-info {
-            background: #17a2b8;
-            color: white;
-        }
-
-        .badge-secondary {
-            background: #6c757d;
-            color: white;
-        }
     </style>
 </head>
 
@@ -357,15 +295,15 @@ include '../../includes/header.php';
     <div class="member-info">
         <table>
             <tr>
-                <td width="25%"><strong>Member No:</strong> <?php echo $member['member_no']; ?></td>
-                <td width="25%"><strong>Full Name:</strong> <?php echo $member['full_name']; ?></td>
-                <td width="25%"><strong>National ID:</strong> <?php echo $member['national_id']; ?></td>
-                <td width="25%"><strong>Phone:</strong> <?php echo $member['phone']; ?></td>
+                <td><strong>Member No:</strong> <?php echo $member['member_no']; ?></td>
+                <td><strong>Full Name:</strong> <?php echo $member['full_name']; ?></td>
             </tr>
             <tr>
-                <td><strong>Email:</strong> <?php echo $member['email'] ?: 'N/A'; ?></td>
+                <td><strong>National ID:</strong> <?php echo $member['national_id']; ?></td>
+                <td><strong>Phone:</strong> <?php echo $member['phone']; ?></td>
+            </tr>
+            <tr>
                 <td><strong>Date Joined:</strong> <?php echo formatDatePrint($member['date_joined']); ?></td>
-                <td><strong>Address:</strong> <?php echo $member['address'] ?: 'N/A'; ?></td>
                 <td><strong>Generated On:</strong> <?php echo date('d M Y H:i:s'); ?></td>
             </tr>
         </table>
@@ -376,7 +314,7 @@ include '../../includes/header.php';
         <div class="section-title">BALANCE BROUGHT FORWARD</div>
         <table>
             <tr>
-                <td width="80%"><strong>Opening Balance as at 01/01/<?php echo $year; ?>:</strong></td>
+                <td><strong>Opening Balance as at 01/01/<?php echo $year; ?>:</strong></td>
                 <td class="text-right"><strong><?php echo formatCurrencyPrint($opening_balance); ?></strong></td>
             </tr>
         </table>
@@ -402,9 +340,9 @@ include '../../includes/header.php';
                 <td>Total Share Contributions</td>
                 <td class="text-right"><?php echo formatCurrencyPrint($contributions['total_contributions']); ?></td>
             </tr>
-            <tr style="font-weight: bold; background: #f0f0f0;">
-                <td>Total Share Capital</td>
-                <td class="text-right"><?php echo formatCurrencyPrint($total_share_capital); ?></td>
+            <tr>
+                <td><strong>Total Share Capital</strong></td>
+                <td class="text-right"><strong><?php echo formatCurrencyPrint($total_share_capital); ?></strong></td>
             </tr>
             <tr>
                 <td>Full Shares Issued</td>
@@ -453,168 +391,6 @@ include '../../includes/header.php';
             </div>
         <?php endif; ?>
     </div>
-
-    <!-- LOANS SUMMARY SECTION - NEW -->
-    <div class="section">
-        <div class="section-title">LOANS SUMMARY (LIFETIME)</div>
-        <table>
-            <tr>
-                <th>Description</th>
-                <th class="text-right">Amount</th>
-            </tr>
-            <tr>
-                <td>Total Loans Taken</td>
-                <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_amount']); ?></td>
-            </tr>
-            <tr>
-                <td>Total Principal</td>
-                <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_principal']); ?></td>
-            </tr>
-            <tr>
-                <td>Total Interest</td>
-                <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_interest']); ?></td>
-            </tr>
-            <tr style="font-weight: bold; background: #f0f0f0;">
-                <td>Outstanding Balance</td>
-                <td class="text-right text-danger"><?php echo formatCurrencyPrint($loan_summary['outstanding_balance']); ?></td>
-            </tr>
-            <tr>
-                <td>Number of Loans</td>
-                <td class="text-right"><?php echo $loan_summary['total_loans']; ?></td>
-            </tr>
-        </table>
-    </div>
-
-    <!-- ACTIVE LOANS DETAILS -->
-    <?php if ($active_loans->num_rows > 0): ?>
-        <div class="section">
-            <div class="section-title">ACTIVE LOANS</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Loan No</th>
-                        <th>Product</th>
-                        <th>Principal</th>
-                        <th>Interest</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Balance</th>
-                        <th>Status</th>
-                        <th>Disbursement Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    $active_loans->data_seek(0);
-                    while ($loan = $active_loans->fetch_assoc()):
-                        $balance = $loan['total_amount'] - $loan['amount_paid'];
-                    ?>
-                        <tr>
-                            <td><?php echo $loan['loan_no']; ?></td>
-                            <td><?php echo $loan['product_name']; ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($loan['principal_amount']); ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($loan['interest_amount']); ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($loan['total_amount']); ?></td>
-                            <td class="text-right text-success"><?php echo formatCurrencyPrint($loan['amount_paid']); ?></td>
-                            <td class="text-right text-danger"><?php echo formatCurrencyPrint($balance); ?></td>
-                            <td class="text-center">
-                                <?php
-                                $status_class = $loan['status'] == 'active' ? 'badge-success' : ($loan['status'] == 'disbursed' ? 'badge-info' : 'badge-secondary');
-                                ?>
-                                <span class="badge <?php echo $status_class; ?>"><?php echo ucfirst($loan['status']); ?></span>
-                            </td>
-                            <td><?php echo formatDatePrint($loan['disbursement_date']); ?></td>
-                        </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
-        </div>
-    <?php endif; ?>
-
-    <!-- ALL LOANS DETAILS -->
-    <?php if ($all_loans->num_rows > 0): ?>
-        <div class="section">
-            <div class="section-title">ALL LOANS HISTORY</div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Loan No</th>
-                        <th>Product</th>
-                        <th>Principal</th>
-                        <th>Interest</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Balance</th>
-                        <th>Status</th>
-                        <th>Application Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    $all_loans->data_seek(0);
-                    while ($loan = $all_loans->fetch_assoc()):
-                        $balance = $loan['total_amount'] - $loan['amount_paid'];
-                        $status_class = $loan['status'] == 'completed' ? 'badge-success' : ($loan['status'] == 'active' ? 'badge-info' : ($loan['status'] == 'pending' ? 'badge-warning' : ($loan['status'] == 'defaulted' ? 'badge-danger' : 'badge-secondary')));
-                    ?>
-                        <tr>
-                            <td><?php echo $loan['loan_no']; ?></td>
-                            <td><?php echo $loan['product_name']; ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($loan['principal_amount']); ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($loan['interest_amount']); ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($loan['total_amount']); ?></td>
-                            <td class="text-right text-success"><?php echo formatCurrencyPrint($loan['amount_paid']); ?></td>
-                            <td class="text-right <?php echo $balance > 0 ? 'text-danger' : 'text-success'; ?>"><?php echo formatCurrencyPrint($balance); ?></td>
-                            <td class="text-center"><span class="badge <?php echo $status_class; ?>"><?php echo ucfirst(str_replace('_', ' ', $loan['status'])); ?></span></td>
-                            <td><?php echo formatDatePrint($loan['application_date']); ?></td>
-                        </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
-        </div>
-    <?php endif; ?>
-
-    <!-- Loan Payments for the Year -->
-    <?php if ($loan_payments->num_rows > 0): ?>
-        <div class="section">
-            <div class="section-title">LOAN PAYMENTS - <?php echo $year; ?></div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Loan No</th>
-                        <th class="text-right">Principal</th>
-                        <th class="text-right">Interest</th>
-                        <th class="text-right">Total</th>
-                        <th>Method</th>
-                        <th>Reference</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php
-                    $total_payments_year = 0;
-                    $loan_payments->data_seek(0);
-                    while ($payment = $loan_payments->fetch_assoc()):
-                        $total_payments_year += $payment['amount_paid'];
-                    ?>
-                        <tr>
-                            <td><?php echo formatDatePrint($payment['payment_date']); ?></td>
-                            <td><?php echo $payment['loan_no']; ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($payment['principal_paid']); ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($payment['interest_paid']); ?></td>
-                            <td class="text-right"><?php echo formatCurrencyPrint($payment['amount_paid']); ?></td>
-                            <td><?php echo ucfirst($payment['payment_method']); ?></td>
-                            <td><?php echo $payment['reference_no'] ?: '-'; ?></td>
-                        </tr>
-                    <?php endwhile; ?>
-                    <tr style="font-weight: bold; background: #f0f0f0;">
-                        <td colspan="4" class="text-right">Total Payments in <?php echo $year; ?>:</td>
-                        <td class="text-right"><?php echo formatCurrencyPrint($total_payments_year); ?></td>
-                        <td colspan="2"></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    <?php endif; ?>
 
     <!-- Savings Account Transactions -->
     <div class="section">
@@ -692,6 +468,56 @@ include '../../includes/header.php';
         </table>
     </div>
 
+    <!-- Loan Payments -->
+    <?php if ($loan_payments->num_rows > 0): ?>
+        <div class="section">
+            <div class="section-title">LOAN PAYMENTS - <?php echo $year; ?></div>
+
+            <div class="summary-box">
+                <div class="summary-item">
+                    <h4>Total Payments</h4>
+                    <p><?php echo formatCurrencyPrint($loan_summary['total_payments']); ?></p>
+                </div>
+                <div class="summary-item">
+                    <h4>Principal Paid</h4>
+                    <p><?php echo formatCurrencyPrint($loan_summary['total_principal_paid']); ?></p>
+                </div>
+                <div class="summary-item">
+                    <h4>Interest Paid</h4>
+                    <p><?php echo formatCurrencyPrint($loan_summary['total_interest_paid']); ?></p>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Loan No</th>
+                        <th class="text-right">Principal</th>
+                        <th class="text-right">Interest</th>
+                        <th class="text-right">Total</th>
+                        <th>Reference</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $loan_payments->data_seek(0);
+                    while ($payment = $loan_payments->fetch_assoc()):
+                    ?>
+                        <tr>
+                            <td><?php echo formatDatePrint($payment['payment_date']); ?></td>
+                            <td><?php echo $payment['loan_no']; ?></td>
+                            <td class="text-right"><?php echo formatCurrencyPrint($payment['principal_paid']); ?></td>
+                            <td class="text-right"><?php echo formatCurrencyPrint($payment['interest_paid']); ?></td>
+                            <td class="text-right"><?php echo formatCurrencyPrint($payment['amount_paid']); ?></td>
+                            <td><?php echo $payment['reference_no'] ?: '-'; ?></td>
+                        </tr>
+                    <?php endwhile; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+
     <!-- Year End Summary -->
     <div class="section">
         <div class="section-title">YEAR END SUMMARY - 31ST DECEMBER <?php echo $year; ?></div>
@@ -733,29 +559,21 @@ include '../../includes/header.php';
                 <td class="text-right"><?php echo formatCurrencyPrint($total_share_capital); ?></td>
             </tr>
 
-            <tr>
-                <td colspan="2"><strong>LOANS SUMMARY</strong></td>
-            </tr>
-            <tr>
-                <td>Total Loans Taken (Lifetime)</td>
-                <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_amount']); ?></td>
-            </tr>
-            <tr>
-                <td>Total Loan Payments (Lifetime)</td>
-                <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_amount'] - $loan_summary['outstanding_balance']); ?></td>
-            </tr>
-            <tr style="font-weight: bold;">
-                <td>Outstanding Loan Balance</td>
-                <td class="text-right text-danger"><?php echo formatCurrencyPrint($loan_summary['outstanding_balance']); ?></td>
-            </tr>
-
             <?php if ($loan_payments->num_rows > 0): ?>
                 <tr>
-                    <td colspan="2"><strong>LOAN ACTIVITY - <?php echo $year; ?></strong></td>
+                    <td colspan="2"><strong>LOAN ACTIVITY</strong></td>
                 </tr>
                 <tr>
-                    <td>Loan Payments Made in <?php echo $year; ?></td>
-                    <td class="text-right"><?php echo formatCurrencyPrint($total_payments_year ?? 0); ?></td>
+                    <td>Total Loan Payments</td>
+                    <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_payments']); ?></td>
+                </tr>
+                <tr>
+                    <td>- Principal Paid</td>
+                    <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_principal_paid']); ?></td>
+                </tr>
+                <tr>
+                    <td>- Interest Paid</td>
+                    <td class="text-right"><?php echo formatCurrencyPrint($loan_summary['total_interest_paid']); ?></td>
                 </tr>
             <?php endif; ?>
         </table>
@@ -774,5 +592,3 @@ include '../../includes/header.php';
 </body>
 
 </html>
-
-<?php include '../../includes/footer.php'; ?>

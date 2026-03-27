@@ -1,4 +1,5 @@
 <?php
+// modules/initialization/opening-balances.php
 //show php errors
 // ini_set('display_errors', 1);
 // ini_set('display_startup_errors', 1);
@@ -6,8 +7,6 @@
 
 
 
-
-// modules/initialization/opening-balances.php
 require_once '../../config/config.php';
 requireRole('admin');
 
@@ -17,193 +16,9 @@ $page_title = 'Opening Balances Initialization';
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action == 'initialize_shares') {
-        initializeSharesBalances();
-    } elseif ($action == 'initialize_deposits') {
-        initializeDepositsBalances();
-    } elseif ($action == 'initialize_loans') {
+    if ($action == 'initialize_loans') {
         initializeLoansBalances();
-    } elseif ($action == 'process_batch') {
-        processOpeningBalanceBatch();
     }
-}
-
-function initializeSharesBalances()
-{
-    $conn = getConnection();
-    $conn->begin_transaction();
-
-    try {
-        $effective_date = $_POST['effective_date'];
-        $batch_no = 'SHARE' . date('Ymd') . rand(1000, 9999);
-        $total_shares = 0;
-        $member_count = 0;
-
-        // Get members with share balances from CSV or manual entry
-        if (isset($_FILES['shares_file']) && $_FILES['shares_file']['error'] == 0) {
-            // Process CSV file
-            $file = fopen($_FILES['shares_file']['tmp_name'], 'r');
-            $headers = fgetcsv($file);
-
-            while ($row = fgetcsv($file)) {
-                $data = array_combine($headers, $row);
-                $member = getMemberByNumber($data['member_no']);
-
-                if ($member) {
-                    $amount = $data['shares'] * 10000; // 1 share = 10,000
-                    $total_shares += $amount;
-                    $member_count++;
-
-                    // Insert opening balance record
-                    $sql = "INSERT INTO opening_balances 
-                            (member_id, balance_type, amount, shares_count, share_value, effective_date, 
-                             description, reference_no, created_by) 
-                            VALUES (?, 'share', ?, ?, 10000, ?, ?, ?, ?)";
-                    $stmt = $conn->prepare($sql);
-                    $desc = "Opening share balance - {$data['shares']} shares";
-                    $stmt->bind_param(
-                        "idiissi",
-                        $member['id'],
-                        $amount,
-                        $data['shares'],
-                        $effective_date,
-                        $desc,
-                        $batch_no,
-                        getCurrentUserId()
-                    );
-                    $stmt->execute();
-                    $balance_id = $conn->insert_id;
-
-                    // Insert into shares table as opening balance
-                    $share_sql = "INSERT INTO shares 
-                                  (member_id, shares_count, share_value, total_value, transaction_type, 
-                                   reference_no, date_purchased, description, is_opening_balance, 
-                                   opening_balance_id, created_by, created_at)
-                                  VALUES (?, ?, 10000, ?, 'opening_balance', ?, ?, ?, 1, ?, ?, NOW())";
-                    $share_stmt = $conn->prepare($share_sql);
-                    $share_stmt->bind_param(
-                        "iidsssii",
-                        $member['id'],
-                        $data['shares'],
-                        $amount,
-                        $batch_no,
-                        $effective_date,
-                        $desc,
-                        $balance_id,
-                        getCurrentUserId()
-                    );
-                    $share_stmt->execute();
-                }
-            }
-            fclose($file);
-        }
-
-        // Create batch record
-        $batch_sql = "INSERT INTO opening_balance_batches 
-                      (batch_no, batch_date, total_members, total_shares, total_deposits, total_loans, 
-                       status, created_by, created_at)
-                      VALUES (?, ?, ?, ?, 0, 0, 'processed', ?, NOW())";
-        $batch_stmt = $conn->prepare($batch_sql);
-        $batch_stmt->bind_param("ssiii", $batch_no, $effective_date, $member_count, $total_shares, getCurrentUserId());
-        $batch_stmt->execute();
-
-        $conn->commit();
-        $_SESSION['success'] = "Share balances initialized successfully. $member_count members processed, Total: " . formatCurrency($total_shares);
-    } catch (Exception $e) {
-        $conn->rollback();
-        $_SESSION['error'] = 'Failed to initialize share balances: ' . $e->getMessage();
-    }
-
-    $conn->close();
-    header('Location: opening-balances.php');
-    exit();
-}
-
-function initializeDepositsBalances()
-{
-    $conn = getConnection();
-    $conn->begin_transaction();
-
-    try {
-        $effective_date = $_POST['effective_date'];
-        $batch_no = 'DEP' . date('Ymd') . rand(1000, 9999);
-        $total_deposits = 0;
-        $member_count = 0;
-
-        if (isset($_FILES['deposits_file']) && $_FILES['deposits_file']['error'] == 0) {
-            $file = fopen($_FILES['deposits_file']['tmp_name'], 'r');
-            $headers = fgetcsv($file);
-
-            while ($row = fgetcsv($file)) {
-                $data = array_combine($headers, $row);
-                $member = getMemberByNumber($data['member_no']);
-
-                if ($member) {
-                    $amount = floatval($data['amount']);
-                    $total_deposits += $amount;
-                    $member_count++;
-
-                    // Insert opening balance record
-                    $sql = "INSERT INTO opening_balances 
-                            (member_id, balance_type, amount, effective_date, description, reference_no, created_by) 
-                            VALUES (?, 'deposit', ?, ?, ?, ?, ?)";
-                    $stmt = $conn->prepare($sql);
-                    $desc = "Opening deposit balance - {$data['description']}";
-                    $stmt->bind_param(
-                        "idissi",
-                        $member['id'],
-                        $amount,
-                        $effective_date,
-                        $desc,
-                        $batch_no,
-                        getCurrentUserId()
-                    );
-                    $stmt->execute();
-                    $balance_id = $conn->insert_id;
-
-                    // Insert into deposits table as opening balance
-                    $deposit_sql = "INSERT INTO deposits 
-                                    (member_id, deposit_date, amount, balance, transaction_type, 
-                                     reference_no, description, is_opening_balance, opening_balance_id, 
-                                     created_by, created_at)
-                                    VALUES (?, ?, ?, ?, 'opening_balance', ?, ?, 1, ?, ?, NOW())";
-                    $deposit_stmt = $conn->prepare($deposit_sql);
-                    $deposit_stmt->bind_param(
-                        "isddssii",
-                        $member['id'],
-                        $effective_date,
-                        $amount,
-                        $amount,
-                        $batch_no,
-                        $desc,
-                        $balance_id,
-                        getCurrentUserId()
-                    );
-                    $deposit_stmt->execute();
-                }
-            }
-            fclose($file);
-        }
-
-        // Update batch
-        $batch_sql = "INSERT INTO opening_balance_batches 
-                      (batch_no, batch_date, total_members, total_shares, total_deposits, total_loans, 
-                       status, created_by, created_at)
-                      VALUES (?, ?, ?, 0, ?, 0, 'processed', ?, NOW())";
-        $batch_stmt = $conn->prepare($batch_sql);
-        $batch_stmt->bind_param("ssiii", $batch_no, $effective_date, $member_count, $total_deposits, getCurrentUserId());
-        $batch_stmt->execute();
-
-        $conn->commit();
-        $_SESSION['success'] = "Deposit balances initialized successfully. $member_count members processed, Total: " . formatCurrency($total_deposits);
-    } catch (Exception $e) {
-        $conn->rollback();
-        $_SESSION['error'] = 'Failed to initialize deposit balances: ' . $e->getMessage();
-    }
-
-    $conn->close();
-    header('Location: opening-balances.php');
-    exit();
 }
 
 function initializeLoansBalances()
@@ -221,107 +36,324 @@ function initializeLoansBalances()
             $file = fopen($_FILES['loans_file']['tmp_name'], 'r');
             $headers = fgetcsv($file);
 
-            while ($row = fgetcsv($file)) {
-                $data = array_combine($headers, $row);
-                $member = getMemberByNumber($data['member_no']);
+            // Clean headers
+            $headers = array_map(function ($h) {
+                $h = preg_replace('/[\x00-\x1F\x80-\xFF]/', '', $h);
+                return trim(strtolower($h));
+            }, $headers);
 
-                if ($member) {
-                    $principal = floatval($data['principal']);
-                    $interest = floatval($data['interest']) ?? 0;
-                    $total = $principal + $interest;
-                    $total_loans += $principal;
-                    $loan_count++;
+            error_log("CSV Headers: " . print_r($headers, true));
 
-                    // Generate loan number
-                    $loan_no = 'OLD' . date('Y') . str_pad($loan_count, 4, '0', STR_PAD_LEFT);
+            $line_number = 1;
+            $errors = [];
 
-                    // Insert opening balance record
-                    $sql = "INSERT INTO opening_balances 
-                            (member_id, balance_type, amount, loan_id, effective_date, description, reference_no, created_by) 
-                            VALUES (?, 'loan', ?, NULL, ?, ?, ?, ?)";
-                    $stmt = $conn->prepare($sql);
-                    $desc = "Opening loan balance - {$data['description']}";
-                    $stmt->bind_param(
-                        "idissi",
-                        $member['id'],
-                        $principal,
-                        $effective_date,
-                        $desc,
-                        $batch_no,
-                        getCurrentUserId()
-                    );
-                    $stmt->execute();
-                    $balance_id = $conn->insert_id;
+            while (($row = fgetcsv($file)) !== false) {
+                $line_number++;
 
-                    // Insert into loans table as opening balance
-                    $loan_sql = "INSERT INTO loans 
-                                (loan_no, member_id, product_id, principal_amount, interest_amount, 
-                                 total_amount, duration_months, interest_rate, application_date, 
-                                 disbursement_date, status, is_opening_balance, opening_balance_id, 
-                                 created_by, created_at)
-                                VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?, NOW())";
-                    $loan_stmt = $conn->prepare($loan_sql);
-                    $loan_stmt->bind_param(
-                        "siiddiisssii",
-                        $loan_no,
-                        $member['id'],
-                        $principal,
-                        $interest,
-                        $total,
-                        $data['duration'] ?? 12,
-                        $data['interest_rate'] ?? 12,
-                        $effective_date,
-                        $effective_date,
-                        $balance_id,
-                        getCurrentUserId()
-                    );
-                    $loan_stmt->execute();
-                    $loan_id = $conn->insert_id;
-
-                    // Update opening balance with loan_id
-                    $update_sql = "UPDATE opening_balances SET loan_id = ? WHERE id = ?";
-                    $update_stmt = $conn->prepare($update_sql);
-                    $update_stmt->bind_param("ii", $loan_id, $balance_id);
-                    $update_stmt->execute();
+                // Skip empty rows
+                if (empty(array_filter($row))) {
+                    continue;
                 }
+
+                // Map data to headers
+                $data = array_combine($headers, $row);
+                error_log("Line $line_number data: " . print_r($data, true));
+
+                // Get member by number - try multiple possible column names
+                $member_no = '';
+                if (isset($data['member_no']) && !empty($data['member_no'])) {
+                    $member_no = trim($data['member_no']);
+                } elseif (isset($data['memberno']) && !empty($data['memberno'])) {
+                    $member_no = trim($data['memberno']);
+                } elseif (isset($data['member number']) && !empty($data['member number'])) {
+                    $member_no = trim($data['member number']);
+                } elseif (isset($data['m/no']) && !empty($data['m/no'])) {
+                    $member_no = trim($data['m/no']);
+                } elseif (isset($data['mno']) && !empty($data['mno'])) {
+                    $member_no = trim($data['mno']);
+                }
+
+                if (empty($member_no)) {
+                    $errors[] = "Line $line_number: Member number missing. Available fields: " . implode(', ', array_keys($data));
+                    continue;
+                }
+
+                error_log("Looking for member: '$member_no'");
+
+                // Try to find member with multiple methods
+                $member = getMemberByNumberAdvanced($conn, $member_no);
+
+                if (!$member) {
+                    // Try with the member number from the database to see what's available
+                    $all_members = $conn->query("SELECT member_no, full_name FROM members LIMIT 10");
+                    $available_members = [];
+                    while ($m = $all_members->fetch_assoc()) {
+                        $available_members[] = $m['member_no'] . ' - ' . $m['full_name'];
+                    }
+                    $errors[] = "Line $line_number: Member not found - No: '$member_no'. Available members: " . implode(', ', array_slice($available_members, 0, 5)) . "...";
+                    continue;
+                }
+
+                error_log("Found member: " . $member['member_no'] . " - " . $member['full_name']);
+
+                $principal = floatval($data['principal'] ?? 0);
+                $interest = floatval($data['interest'] ?? 0);
+                $total = $principal + $interest;
+                $duration = intval($data['duration'] ?? 12);
+                $interest_rate = floatval($data['interest_rate'] ?? 12);
+                $description = $data['description'] ?? 'Opening loan balance';
+                $disbursement_date = $data['disbursement_date'] ?? $effective_date;
+
+                if ($principal <= 0) {
+                    $errors[] = "Line $line_number: Invalid principal amount: $principal";
+                    continue;
+                }
+
+                // Generate loan number
+                $loan_no = 'OLD' . date('Y') . str_pad($loan_count + 1, 4, '0', STR_PAD_LEFT);
+
+                // Insert opening balance record
+                $current_user_id = getCurrentUserId();
+                if (!$current_user_id) {
+                    $current_user_id = 1; // Default admin
+                }
+
+                $balance_sql = "INSERT INTO opening_balances 
+                               (member_id, balance_type, amount, loan_id, effective_date, description, reference_no, created_by)
+                               VALUES (?, 'loan', ?, NULL, ?, ?, ?, ?)";
+                $balance_stmt = $conn->prepare($balance_sql);
+                $balance_desc = $description;
+                $balance_ref = $batch_no;
+                $balance_amount = $principal;
+                $balance_effective = $effective_date;
+                $balance_created_by = $current_user_id;
+                $balance_stmt->bind_param(
+                    "idsssi",
+                    $member['id'],
+                    $balance_amount,
+                    $balance_effective,
+                    $balance_desc,
+                    $balance_ref,
+                    $balance_created_by
+                );
+                $balance_stmt->execute();
+                $balance_id = $conn->insert_id;
+
+                // Insert into loans table as opening balance
+                $loan_sql = "INSERT INTO loans 
+                            (loan_no, member_id, product_id, principal_amount, interest_amount, 
+                             total_amount, duration_months, interest_rate, application_date, 
+                             disbursement_date, status, is_opening_balance, opening_balance_id, 
+                             created_by, created_at)
+                            VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?, NOW())";
+                $loan_stmt = $conn->prepare($loan_sql);
+                $loan_loan_no = $loan_no;
+                $loan_member_id = $member['id'];
+                $loan_principal = $principal;
+                $loan_interest = $interest;
+                $loan_total = $total;
+                $loan_duration = $duration;
+                $loan_interest_rate = $interest_rate;
+                $loan_application_date = $disbursement_date;
+                $loan_disbursement_date = $disbursement_date;
+                $loan_balance_id = $balance_id;
+                $loan_created_by = $current_user_id;
+
+                $loan_stmt->bind_param(
+                    "sidddiissii",
+                    $loan_loan_no,
+                    $loan_member_id,
+                    $loan_principal,
+                    $loan_interest,
+                    $loan_total,
+                    $loan_duration,
+                    $loan_interest_rate,
+                    $loan_application_date,
+                    $loan_disbursement_date,
+                    $loan_balance_id,
+                    $loan_created_by
+                );
+                $loan_stmt->execute();
+                $loan_id = $conn->insert_id;
+
+                // Update opening balance with loan_id
+                $update_sql = "UPDATE opening_balances SET loan_id = ? WHERE id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_loan_id = $loan_id;
+                $update_balance_id = $balance_id;
+                $update_stmt->bind_param("ii", $update_loan_id, $update_balance_id);
+                $update_stmt->execute();
+
+                $total_loans += $principal;
+                $loan_count++;
             }
+
             fclose($file);
+
+            // Create batch record if any loans were imported
+            if ($loan_count > 0) {
+                $batch_sql = "INSERT INTO opening_balance_batches 
+                             (batch_no, batch_date, total_members, total_shares, total_deposits, total_loans, 
+                              status, notes, created_by, created_at)
+                             VALUES (?, ?, ?, 0, 0, ?, 'processed', ?, ?, NOW())";
+                $batch_stmt = $conn->prepare($batch_sql);
+                $batch_no_val = $batch_no;
+                $batch_date_val = $effective_date;
+                $batch_members_val = $loan_count;
+                $batch_loans_val = $total_loans;
+                $batch_notes = "Imported $loan_count loan balances totaling " . formatCurrency($total_loans);
+                $batch_created_by = $current_user_id ?? 1;
+
+                $batch_stmt->bind_param(
+                    "ssiisi",
+                    $batch_no_val,
+                    $batch_date_val,
+                    $batch_members_val,
+                    $batch_loans_val,
+                    $batch_notes,
+                    $batch_created_by
+                );
+                $batch_stmt->execute();
+            }
+
+            $conn->commit();
+
+            $_SESSION['success'] = "Loan balances initialized successfully.\n";
+            $_SESSION['success'] .= "Loans: $loan_count\n";
+            $_SESSION['success'] .= "Total Amount: " . formatCurrency($total_loans);
+
+            if (!empty($errors)) {
+                $_SESSION['import_errors'] = $errors;
+            }
+        } else {
+            throw new Exception("No file uploaded or file error");
         }
-
-        // Update batch
-        $batch_sql = "INSERT INTO opening_balance_batches 
-                      (batch_no, batch_date, total_members, total_shares, total_deposits, total_loans, 
-                       status, created_by, created_at)
-                      VALUES (?, ?, ?, 0, 0, ?, 'processed', ?, NOW())";
-        $batch_stmt = $conn->prepare($batch_sql);
-        $batch_stmt->bind_param("ssiii", $batch_no, $effective_date, $loan_count, $total_loans, getCurrentUserId());
-        $batch_stmt->execute();
-
-        $conn->commit();
-        $_SESSION['success'] = "Loan balances initialized successfully. $loan_count loans processed, Total: " . formatCurrency($total_loans);
     } catch (Exception $e) {
         $conn->rollback();
         $_SESSION['error'] = 'Failed to initialize loan balances: ' . $e->getMessage();
+        error_log("Loan initialization error: " . $e->getMessage());
     }
 
     $conn->close();
+
+    // FIXED: Ensure no output before redirect
+    if (ob_get_length()) ob_clean();
     header('Location: opening-balances.php');
     exit();
 }
 
-function getMemberByNumber($member_no)
+function getMemberByNumberAdvanced($conn, $member_no)
 {
+    // Strategy 1: Exact match
     $sql = "SELECT id, member_no, full_name FROM members WHERE member_no = ?";
-    $result = executeQuery($sql, "s", [$member_no]);
-    return $result->fetch_assoc();
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $member_no);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
+        return $result->fetch_assoc();
+    }
+
+    // Strategy 2: Case-insensitive match
+    $sql = "SELECT id, member_no, full_name FROM members WHERE LOWER(member_no) = LOWER(?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $member_no);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
+        return $result->fetch_assoc();
+    }
+
+    // Strategy 3: Remove leading zeros and try
+    $cleaned = ltrim($member_no, '0');
+    if ($cleaned != $member_no) {
+        $sql = "SELECT id, member_no, full_name FROM members WHERE member_no = ? OR member_no LIKE ?";
+        $like = '%' . $cleaned . '%';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("ss", $cleaned, $like);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows > 0) {
+            return $result->fetch_assoc();
+        }
+    }
+
+    // Strategy 4: Try to match by phone number if member_no looks like phone
+    if (strlen($member_no) == 10 && substr($member_no, 0, 1) == '0') {
+        $sql = "SELECT id, member_no, full_name FROM members WHERE phone = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $member_no);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows > 0) {
+            return $result->fetch_assoc();
+        }
+    }
+
+    // Strategy 5: Try to match by ID if member_no is numeric and looks like ID
+    if (is_numeric($member_no) && strlen($member_no) >= 6 && strlen($member_no) <= 8) {
+        $sql = "SELECT id, member_no, full_name FROM members WHERE national_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $member_no);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows > 0) {
+            return $result->fetch_assoc();
+        }
+    }
+
+    return null;
 }
 
-// Get existing batches
-$batches_sql = "SELECT * FROM opening_balance_batches ORDER BY created_at DESC LIMIT 20";
-$batches = executeQuery($batches_sql);
+function getMemberByNumber($member_no)
+{
+    error_log("Searching for member: " . $member_no);
+
+    // Try exact match first
+    $sql = "SELECT id, member_no, full_name FROM members WHERE member_no = ?";
+    $result = executeQuery($sql, "s", [$member_no]);
+
+    if ($result->num_rows > 0) {
+        error_log("Found exact match: " . $member_no);
+        return $result->fetch_assoc();
+    }
+
+    // Try with LIKE for partial matches
+    $like_no = '%' . $member_no . '%';
+    $sql2 = "SELECT id, member_no, full_name FROM members WHERE member_no LIKE ?";
+    $result2 = executeQuery($sql2, "s", [$like_no]);
+
+    if ($result2->num_rows > 0) {
+        error_log("Found LIKE match: " . $member_no);
+        return $result2->fetch_assoc();
+    }
+
+    // Try without leading zeros
+    $clean_no = ltrim($member_no, '0');
+    if ($clean_no != $member_no) {
+        $sql3 = "SELECT id, member_no, full_name FROM members WHERE member_no = ? OR member_no LIKE ?";
+        $like_clean = '%' . $clean_no . '%';
+        $result3 = executeQuery($sql3, "ss", [$clean_no, $like_clean]);
+
+        if ($result3->num_rows > 0) {
+            error_log("Found cleaned match: " . $clean_no);
+            return $result3->fetch_assoc();
+        }
+    }
+
+    error_log("No member found for: " . $member_no);
+    return null;
+}
 
 include '../../includes/header.php';
 ?>
+
+<!-- Rest of the HTML remains the same -->
 
 <!-- Page Header -->
 <div class="page-header">

@@ -3,7 +3,7 @@
 require_once '../../config/config.php';
 requireRole('admin');
 
-$page_title = 'Calculate Dividends (Kenya SACCO Pro-rata)';
+$page_title = 'Calculate Dividends (Pro-rata)';
 
 // Get financial year
 $current_year = date('Y');
@@ -392,7 +392,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             'total' => $total_dividend
         ]);
 
-        $_SESSION['success'] = "Dividends calculated successfully using KENYA SACCO PRO-RATA method.\n";
+        $_SESSION['success'] = "Dividends calculated successfully using PRO-RATA method.\n";
         $_SESSION['success'] .= "Eligible members: $eligible_count, Excluded: $excluded_count\n";
         $_SESSION['success'] .= "Total payout: " . formatCurrency($total_dividend);
     } catch (Exception $e) {
@@ -422,11 +422,11 @@ include '../../includes/header.php';
 <div class="page-header">
     <div class="row align-items-center">
         <div class="col">
-            <h3 class="page-title">Calculate Dividends (Kenya SACCO Pro-rata)</h3>
+            <h3 class="page-title">Calculate Dividends (Pro-rata)</h3>
             <ul class="breadcrumb">
                 <li class="breadcrumb-item"><a href="../../dashboard.php">Home</a></li>
                 <li class="breadcrumb-item"><a href="index.php">Dividends</a></li>
-                <li class="breadcrumb-item active">Kenya SACCO Pro-rata</li>
+                <li class="breadcrumb-item active">Pro-rata</li>
             </ul>
         </div>
     </div>
@@ -435,7 +435,7 @@ include '../../includes/header.php';
 <!-- Calculation Form -->
 <div class="card">
     <div class="card-header bg-primary text-white">
-        <h5 class="card-title mb-0">Kenya SACCO Dividend Calculation Parameters</h5>
+        <h5 class="card-title mb-0">Dividend Calculation Parameters</h5>
     </div>
     <div class="card-body">
         <form method="POST" action="" class="needs-validation" novalidate>
@@ -456,7 +456,7 @@ include '../../includes/header.php';
                     <label for="interest_rate" class="form-label">Dividend Rate (%) <span class="text-danger">*</span></label>
                     <input type="number" class="form-control" id="interest_rate" name="interest_rate"
                         min="0" max="100" step="0.01" required value="<?php echo $default_interest_rate; ?>">
-                    <small class="text-muted">Current Kenya SACCO standard: 11%</small>
+                    <small class="text-muted">Current rate: <?php echo $default_interest_rate; ?>%</small>
                 </div>
 
                 <div class="col-md-3 mb-3">
@@ -492,7 +492,7 @@ include '../../includes/header.php';
 
             <div class="alert alert-info">
                 <i class="fas fa-calculator me-2"></i>
-                <strong>Kenya SACCO Pro-rata Calculation Method:</strong>
+                <strong>Pro-rata Calculation Method:</strong>
                 <div class="row mt-3">
                     <div class="col-md-6">
                         <h6>Step 1: Opening Balance Adjustment</h6>
@@ -551,7 +551,7 @@ include '../../includes/header.php';
             <hr>
 
             <button type="submit" class="btn btn-primary btn-lg" onclick="return confirm('This will calculate pro-rata dividends for all eligible members using Kenya SACCO standards. Proceed?')">
-                <i class="fas fa-calculator me-2"></i>Calculate Kenya SACCO Pro-rata Dividends
+                <i class="fas fa-calculator me-2"></i>Calculate Pro-rata Dividends
             </button>
             <a href="index.php" class="btn btn-secondary btn-lg">
                 <i class="fas fa-times me-2"></i>Cancel
