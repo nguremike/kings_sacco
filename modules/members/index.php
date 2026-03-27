@@ -204,50 +204,6 @@ include '../../includes/header.php';
     </div>
 </div>
 
-<!-- Recent Members Card -->
-<div class="card mb-4">
-    <div class="card-header bg-info text-white">
-        <h5 class="card-title mb-0"><i class="fas fa-clock me-2"></i>Recently Added Members</h5>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>Member No</th>
-                        <th>Name</th>
-                        <th>Phone</th>
-                        <th>Date Joined</th>
-                        <th>Current Balance</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php while ($recent = $recent_members->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo $recent['member_no']; ?></td>
-                            <td>
-                                <a href="view.php?id=<?php echo $recent['id']; ?>">
-                                    <?php echo $recent['full_name']; ?>
-                                </a>
-                            </td>
-                            <td><?php echo $recent['phone']; ?></td>
-                            <td><?php echo formatDate($recent['date_joined']); ?></td>
-                            <td class="fw-bold <?php echo ($recent['current_balance'] ?? 0) >= 0 ? 'text-success' : 'text-danger'; ?>">
-                                <?php echo formatCurrency($recent['current_balance'] ?? 0); ?>
-                            </td>
-                            <td>
-                                <span class="badge bg-<?php echo $recent['membership_status'] == 'active' ? 'success' : ($recent['membership_status'] == 'pending' ? 'warning' : 'secondary'); ?>">
-                                    <?php echo ucfirst($recent['membership_status']); ?>
-                                </span>
-                            </td>
-                        </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
 
 <!-- Members Table -->
 <div class="card">
@@ -271,7 +227,7 @@ include '../../includes/header.php';
                         <th>Email</th> -->
                         <!-- <th>Date Joined</th> -->
                         <th>Deposits</th>
-                        <th>Withdrawals</th>
+                        <th>Debit</th>
                         <th>Current Balance</th>
                         <th>Loans</th>
                         <th>Shares</th>
@@ -384,6 +340,52 @@ include '../../includes/header.php';
         </div>
     </div>
 </div>
+
+<!-- Recent Members Card -->
+<div class="card mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="card-title mb-0"><i class="fas fa-clock me-2"></i>Recently Added Members</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Member No</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Date Joined</th>
+                        <th>Current Balance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php while ($recent = $recent_members->fetch_assoc()): ?>
+                        <tr>
+                            <td><?php echo $recent['member_no']; ?></td>
+                            <td>
+                                <a href="view.php?id=<?php echo $recent['id']; ?>">
+                                    <?php echo $recent['full_name']; ?>
+                                </a>
+                            </td>
+                            <td><?php echo $recent['phone']; ?></td>
+                            <td><?php echo formatDate($recent['date_joined']); ?></td>
+                            <td class="fw-bold <?php echo ($recent['current_balance'] ?? 0) >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                <?php echo formatCurrency($recent['current_balance'] ?? 0); ?>
+                            </td>
+                            <td>
+                                <span class="badge bg-<?php echo $recent['membership_status'] == 'active' ? 'success' : ($recent['membership_status'] == 'pending' ? 'warning' : 'secondary'); ?>">
+                                    <?php echo ucfirst($recent['membership_status']); ?>
+                                </span>
+                            </td>
+                        </tr>
+                    <?php endwhile; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 
 <script>
     function confirmDelete(id) {

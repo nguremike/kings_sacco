@@ -10,7 +10,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
     <!-- Font Awesome 6 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="../../assets/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/kings-sacco/assets/fontawesome/css/all.min.css">
 
     <!-- DataTables CSS -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
@@ -273,6 +274,10 @@
 
                         <a href="<?php echo APP_URL; ?>/modules/accounting/share-capital-charge.php" class="submenu-item">
                             <i class="fa-solid fa-file-invoice-dollar"></i> Share Capital Charges
+                        </a>
+
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/share-capital-deduction.php" class="submenu-item">
+                            <i class="fa-solid fa-file-invoice-dollar"></i> Share Capital Deduction
                         </a>
 
                         <a href="<?php echo APP_URL; ?>/modules/accounting/year-end-processing.php" class="submenu-item">
