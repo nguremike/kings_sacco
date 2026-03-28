@@ -7,22 +7,21 @@
     <title><?php echo APP_NAME; ?> - <?php echo $page_title ?? 'Dashboard'; ?></title>
 
     <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/kings-sacco/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
 
     <!-- Font Awesome 6 -->
-    <link rel="stylesheet" href="../../assets/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="/kings-sacco/assets/fontawesome/css/all.min.css">
 
     <!-- DataTables CSS -->
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.2.2/css/buttons.bootstrap5.min.css">
+    <link rel="stylesheet" href="/kings-sacco/assets/datatables/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="/kings-sacco/assets/datatables/css/buttons.bootstrap5.min.css">
 
     <!-- Select2 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+    <link href="/kings-sacco/assets/select2/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="/kings-sacco/assets/select2/css/select2-bootstrap-5-theme.min.css" />
 
     <!-- SweetAlert2 CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <link rel="stylesheet" href="/kings-sacco/assets/sweetalert2/css/sweetalert2.min.css">
 
     <!-- Custom CSS -->
     <link rel="stylesheet" href="<?php echo APP_URL; ?>/assets/css/style.css">
@@ -36,8 +35,10 @@
         <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
             <div class="container-fluid">
                 <a class="navbar-brand" href="<?php echo APP_URL; ?>/dashboard.php">
-                    <!-- <i class="fas fa-hand-holding-usd me-2"></i> -->
-                    <i class="fa-solid fa-chess-king"></i>
+
+                    <!-- add image -->
+                    <img src="/kings-sacco/assets/images/crown.png" alt="Logo" style="width: 30px; height: 30px; margin-right: 5px;">
+
                     <?php echo APP_NAME; ?>
                 </a>
 

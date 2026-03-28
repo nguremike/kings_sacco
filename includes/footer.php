@@ -3,32 +3,32 @@
 <?php endif; ?>
 
 <!-- jQuery -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="/kings-sacco/assets/js/jquery-3.6.0.min.js"></script>
 
 
 
 <!-- Bootstrap 5 JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/kings-sacco/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
 
 <!-- Fontawesome -->
 <script src="/kings-sacco/assets/fontawesome/js/fontawesome.js" crossorigin="anonymous"></script>
 
 <!-- DataTables JS -->
-<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.bootstrap5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.print.min.js"></script>
+<script src="/kings-sacco/assets/datatables/js/jquery.dataTables.min.js"></script>
+<script src="/kings-sacco/assets/datatables/js/dataTables.bootstrap5.min.js"></script>
+<script src="/kings-sacco/assets/datatables/js/dataTables.buttons.min.js"></script>
+<script src="/kings-sacco/assets/datatables/js/buttons.bootstrap5.min.js"></script>
+<script src="/kings-sacco/assets/datatables/js/buttons.html5.min.js"></script>
+<script src="/kings-sacco/assets/datatables/js/buttons.print.min.js"></script>
 
 <!-- Select2 JS -->
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="/kings-sacco/assets/select2/js/select2.min.js"></script>
 
 <!-- SweetAlert2 JS -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src=" /kings-sacco/assets/sweetalert2/js/sweetalert2.all.min.js"></script>
 
 <!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+<script src="/kings-sacco/assets/js/chart.js"></script>
 
 
 

@@ -41,10 +41,10 @@ $page_title = 'Login';
     <title><?php echo APP_NAME; ?> - Login</title>
 
     <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="/kings-sacco/assets/bootstrap/css/bootstrap.min.css" rel="stylesheet">
 
     <!-- Font Awesome 6 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/kings-sacco/assets/fontawesome/css/all.min.css">
 
     <!-- Custom CSS -->
     <style>
@@ -136,7 +136,9 @@ $page_title = 'Login';
 <body>
     <div class="login-card">
         <div class="login-header">
-            <i class="fas fa-hand-holding-usd"></i>
+            <!-- inset logo image  -->
+            <img src="/kings-sacco/assets/images/logo.png" alt="Logo" style="width: 120px; border-radius: 50%; margin-bottom: 20px;">
+
             <h2>Welcome Back</h2>
             <p>Sign in to access your SACCO account</p>
         </div>
@@ -177,7 +179,7 @@ $page_title = 'Login';
     </div>
 
     <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/kings-sacco/assets/bootstrap/js/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

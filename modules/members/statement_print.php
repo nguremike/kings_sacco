@@ -347,7 +347,7 @@ include '../../includes/header.php';
 <body>
     <div class="header d-flex justify-content-center align-items-center flex-wrap py-3 border-bottom">
         <div class="d-flex align-items-center gap-3">
-            <img src="/kings-sacco/assets/images/logo.jpeg" alt="Logo" style="height: 80px; width: auto;">
+            <img src="/kings-sacco/assets/images/logo.png" alt="Logo" style="height: 80px; width: auto;">
 
         </div>
         <div class="text-center">

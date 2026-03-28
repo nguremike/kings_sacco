@@ -1,0 +1,89 @@
+/* source-sans-pro-300 */
+@font-face {
+  font-family: "Source Sans Pro Light";
+  font-style: normal;
+  font-weight: 300;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-Light.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-regular */
+@font-face {
+  font-family: "Source Sans Pro Regular";
+  font-style: normal;
+  font-weight: 400;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-Regular.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-regular itallic */
+@font-face {
+  font-family: "Source Sans Pro Italic";
+  font-style: italic;
+  font-weight: 400;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-Italic.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-600 */
+@font-face {
+  font-family: "Source Sans Pro SemiBold";
+  font-style: normal;
+  font-weight: 600;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-SemiBold.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-700 */
+@font-face {
+  font-family: "Source Sans Pro Bold";
+  font-style: normal;
+  font-weight: 700;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-Bold.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-700 itallic */
+@font-face {
+  font-family: "Source Sans Pro Bold Italic";
+  font-style: italic;
+  font-weight: 700;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-BoldItalic.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-900 */
+@font-face {
+  font-family: "Source Sans Pro Black";
+  font-style: normal;
+  font-weight: 900;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-Black.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-900 itallic */
+@font-face {
+  font-family: "Source Sans Pro Black Italic";
+  font-style: italic;
+  font-weight: 900;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-BlackItalic.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-300 */
+@font-face {
+  font-family: "Source Sans Pro ExtraLight";
+  font-style: normal;
+  font-weight: 300;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-ExtraLight.ttf)
+    format("truetype");
+}
+
+/* source-sans-pro-300 */
+@font-face {
+  font-family: "Source Sans Pro ExtraLight Italic";
+  font-style: italic;
+  font-weight: 300;
+  src: url(../webfonts/Source_Sans_3/static/SourceSans3-ExtraLightItalic.ttf)
+    format("truetype");
+}
