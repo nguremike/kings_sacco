@@ -52,6 +52,20 @@ $repaymentsResult = executeQuery("SELECT COALESCE(SUM(amount_paid), 0) as total 
 $total_repayments = $repaymentsResult->fetch_assoc()['total'] ?? 0;
 $stats['loan_balance'] = $stats['total_loan_amount'] - $total_repayments;
 
+// Get detailed withdrawal data for share progress
+$withdrawals_detail = executeQuery("SELECT amount, deposit_date, description, reference_no 
+                                   FROM deposits 
+                                   WHERE member_id = ? AND transaction_type = 'withdrawal'
+                                   ORDER BY deposit_date DESC 
+                                   LIMIT 10", "i", [$id]);
+
+// Get share contributions with withdrawal impact
+$share_contributions = executeQuery("SELECT amount, contribution_date, reference_no, notes 
+                                    FROM share_contributions 
+                                    WHERE member_id = ? 
+                                    ORDER BY contribution_date DESC 
+                                    LIMIT 10", "i", [$id]);
+
 // Get all loans for this member
 $loans_sql = "SELECT l.*, lp.product_name 
               FROM loans l 
@@ -105,12 +119,16 @@ include '../../includes/header.php';
                 <a href="statement.php?id=<?php echo $id; ?>" class="btn btn-success">
                     <i class="fas fa-file-pdf me-2"></i>Statement
                 </a>
-                <button type="button" class="btn btn-info dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
+                <a href="complete-statement.php?id=<?php echo $id; ?>" class="btn btn-info">
+                    <i class="fas fa-file-invoice-dollar me-2"></i>Complete Statement
+                </a>
+                <button type="button" class="btn btn-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
                     <span class="visually-hidden">Toggle Dropdown</span>
                 </button>
                 <ul class="dropdown-menu">
                     <li><a class="dropdown-item" href="../deposits/add.php?member_id=<?php echo $id; ?>"><i class="fas fa-plus me-2"></i>Add Deposit</a></li>
-                    <li><a class="dropdown-item" href="../shares/add.php?member_id=<?php echo $id; ?>"><i class="fas fa-chart-pie me-2"></i>Purchase Shares</a></li>
+                    <li><a class="dropdown-item" href="../deposits/withdrawals.php?member_id=<?php echo $id; ?>"><i class="fas fa-hand-holding-usd me-2"></i>Process Withdrawal</a></li>
+                    <li><a class="dropdown-item" href="../shares/contributions.php?member_id=<?php echo $id; ?>"><i class="fas fa-chart-pie me-2"></i>Add Share Contribution</a></li>
                     <li><a class="dropdown-item" href="../loans/apply.php?member_id=<?php echo $id; ?>"><i class="fas fa-hand-holding-usd me-2"></i>Apply Loan</a></li>
                     <li>
                         <hr class="dropdown-divider">
@@ -188,9 +206,30 @@ include '../../includes/header.php';
                 </div>
             </div>
         </div>
+
+        <!-- Quick Actions Card -->
+        <div class="card mt-4">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="card-title mb-0"><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="../deposits/add.php?member_id=<?php echo $id; ?>" class="btn btn-outline-success">
+                        <i class="fas fa-plus-circle me-2"></i>Add Deposit
+                    </a>
+                    <a href="../deposits/withdrawals.php?member_id=<?php echo $id; ?>" class="btn btn-outline-danger">
+                        <i class="fas fa-hand-holding-usd me-2"></i>Process Withdrawal
+                    </a>
+                    <a href="../shares/contributions.php?member_id=<?php echo $id; ?>" class="btn btn-outline-primary">
+                        <i class="fas fa-coins me-2"></i>Add Share Contribution
+                    </a>
+                    <a href="../loans/apply.php?member_id=<?php echo $id; ?>" class="btn btn-outline-warning">
+                        <i class="fas fa-file-signature me-2"></i>Apply for Loan
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
-
-
 
     <!-- Statistics and Details -->
     <div class="col-md-8">
@@ -204,7 +243,8 @@ include '../../includes/header.php';
                     <div class="stats-content">
                         <h3><?php echo formatCurrency($stats['current_balance']); ?></h3>
                         <p>Current Balance</p>
-                        <small>Deposits: <?php echo formatCurrency($stats['total_deposits']); ?></small>
+                        <small>Deposits: <?php echo formatCurrency($stats['total_deposits']); ?></small><br>
+                        <small class="text-danger">Withdrawals: <?php echo formatCurrency($stats['total_withdrawals']); ?></small>
                     </div>
                 </div>
             </div>
@@ -248,28 +288,28 @@ include '../../includes/header.php';
             </div>
         </div>
 
-        <!-- Share Progress Card -->
+        <!-- Enhanced Share Progress Card with Withdrawals -->
         <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="card-title">Share Progress</h5>
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0"><i class="fas fa-chart-pie me-2"></i>Share Capital Progress</h5>
             </div>
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6">
                         <h6>Share Value: KES 10,000 per share</h6>
                         <div class="mb-3">
-                            <label class="form-label">Total Contributions</label>
-                            <h4><?php echo formatCurrency($member['total_share_contributions'] ?? 0); ?></h4>
+                            <label class="form-label text-muted">Total Share Contributions</label>
+                            <h4 class="text-primary"><?php echo formatCurrency($member['total_share_contributions'] ?? 0); ?></h4>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Full Shares Issued</label>
-                            <h4><?php echo $member['full_shares_issued'] ?? 0; ?></h4>
+                            <label class="form-label text-muted">Full Shares Issued</label>
+                            <h4><?php echo number_format($member['full_shares_issued'] ?? 0); ?></h4>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Partial Balance</label>
-                            <h4><?php echo formatCurrency($member['partial_share_balance'] ?? 0); ?></h4>
+                            <label class="form-label text-muted">Partial Share Balance</label>
+                            <h4 class="text-warning"><?php echo formatCurrency($member['partial_share_balance'] ?? 0); ?></h4>
                         </div>
                     </div>
 
@@ -278,6 +318,7 @@ include '../../includes/header.php';
                         <?php
                         $partial = $member['partial_share_balance'] ?? 0;
                         $percentage = ($partial / 10000) * 100;
+                        $needed = 10000 - $partial;
                         ?>
                         <div class="progress mb-3" style="height: 30px;">
                             <div class="progress-bar progress-bar-striped bg-success"
@@ -292,12 +333,181 @@ include '../../includes/header.php';
 
                         <p class="text-muted">
                             <i class="fas fa-info-circle me-1"></i>
-                            Need KES <?php echo number_format(10000 - $partial, 2); ?> more for next share
+                            Need KES <?php echo number_format($needed, 2); ?> more for next share
                         </p>
 
+                        <div class="alert alert-info mt-2">
+                            <i class="fas fa-chart-line me-2"></i>
+                            <strong>Share Capital Status:</strong>
+                            <?php if ($partial >= 10000): ?>
+                                <span class="text-success">✅ Ready for new share!</span>
+                            <?php elseif ($partial > 0): ?>
+                                <span class="text-warning">⏳ In progress</span>
+                            <?php else: ?>
+                                <span class="text-secondary">📝 Not started</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Withdrawal History Card -->
+        <div class="card mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="card-title mb-0"><i class="fas fa-arrow-up me-2"></i>Withdrawal History (Affects Share Capital)</h5>
+            </div>
+            <div class="card-body">
+                <?php if ($withdrawals_detail->num_rows > 0): ?>
+                    <div class="alert alert-warning mb-3">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Note:</strong> Withdrawals reduce your available funds for share contributions.
+                        Each withdrawal decreases your ability to build share capital.
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Description</th>
+                                    <th>Reference</th>
+                                    <th>Impact on Share Capital</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $total_withdrawn_for_shares = 0;
+                                while ($wd = $withdrawals_detail->fetch_assoc()):
+                                    $impact = "Reduces available funds by " . formatCurrency($wd['amount']);
+                                    $total_withdrawn_for_shares += $wd['amount'];
+                                ?>
+                                    <tr class="table-danger">
+                                        <td><?php echo formatDate($wd['deposit_date']); ?></td>
+                                        <td class="text-danger fw-bold">- <?php echo formatCurrency($wd['amount']); ?></td>
+                                        <td><?php echo $wd['description'] ?: 'Savings withdrawal'; ?></td>
+                                        <td><?php echo $wd['reference_no'] ?: '-'; ?></td>
+                                        <td><small class="text-warning"><?php echo $impact; ?></small></td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-warning">
+                                    <th colspan="4" class="text-end">Total Withdrawals Affecting Share Capital:</th>
+                                    <th class="text-danger"><?php echo formatCurrency($total_withdrawn_for_shares); ?></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="text-center py-3">
+                        <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+                        <p class="text-muted">No withdrawal records found. This member's share capital is intact.</p>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Share Contributions History -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0"><i class="fas fa-coins me-2"></i>Share Contribution History</h5>
+            </div>
+            <div class="card-body">
+                <?php if ($share_contributions->num_rows > 0): ?>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Reference</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php
+                                $total_contributions = 0;
+                                while ($sc = $share_contributions->fetch_assoc()):
+                                    $total_contributions += $sc['amount'];
+                                ?>
+                                    <tr class="table-success">
+                                        <td><?php echo formatDate($sc['contribution_date']); ?></td>
+                                        <td class="text-success fw-bold">+ <?php echo formatCurrency($sc['amount']); ?></td>
+                                        <td><?php echo $sc['reference_no'] ?: '-'; ?></td>
+                                        <td><?php echo $sc['notes'] ?: 'Share contribution'; ?></td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-success">
+                                    <th colspan="3" class="text-end">Total Share Contributions:</th>
+                                    <th class="text-success"><?php echo formatCurrency($total_contributions); ?></th>
+                                </tr>
+                                <tr class="table-info">
+                                    <th colspan="3" class="text-end">Net Share Capital (Contributions - Withdrawals):</th>
+                                    <th class="<?php echo ($total_contributions - $total_withdrawn_for_shares) >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                        <?php echo formatCurrency($total_contributions - $total_withdrawn_for_shares); ?>
+                                    </th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="text-center py-3">
+                        <i class="fas fa-info-circle fa-2x text-muted mb-2"></i>
+                        <p class="text-muted">No share contributions recorded yet.</p>
                         <a href="../shares/contributions.php?member_id=<?php echo $id; ?>" class="btn btn-sm btn-primary">
-                            <i class="fas fa-plus me-2"></i>Add Contribution
+                            <i class="fas fa-plus me-2"></i>Add First Contribution
                         </a>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Share Progress Impact Analysis -->
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i>Share Capital Impact Analysis</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="border p-3 text-center">
+                            <small class="text-muted">Total Share Contributions</small>
+                            <h4 class="text-success"><?php echo formatCurrency($total_contributions ?? 0); ?></h4>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="border p-3 text-center">
+                            <small class="text-muted">Total Withdrawals</small>
+                            <h4 class="text-danger"><?php echo formatCurrency($total_withdrawn_for_shares ?? 0); ?></h4>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <div class="alert alert-<?php echo ($total_contributions ?? 0) > ($total_withdrawn_for_shares ?? 0) ? 'success' : 'danger'; ?>">
+                            <i class="fas fa-<?php echo ($total_contributions ?? 0) > ($total_withdrawn_for_shares ?? 0) ? 'arrow-up' : 'arrow-down'; ?> me-2"></i>
+                            <strong>Net Share Capital Change:</strong>
+                            <?php
+                            $net_change = ($total_contributions ?? 0) - ($total_withdrawn_for_shares ?? 0);
+                            $change_class = $net_change >= 0 ? 'text-success' : 'text-danger';
+                            ?>
+                            <span class="<?php echo $change_class; ?> fw-bold">
+                                <?php echo $net_change >= 0 ? '+' : ''; ?><?php echo formatCurrency($net_change); ?>
+                            </span>
+                            <br>
+                            <small class="text-muted">
+                                <?php if ($net_change > 0): ?>
+                                    Member is actively building share capital.
+                                <?php elseif ($net_change < 0): ?>
+                                    Withdrawals exceed contributions. Consider reducing withdrawals to build share capital.
+                                <?php else: ?>
+                                    No net change in share capital.
+                                <?php endif; ?>
+                            </small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -445,6 +655,69 @@ include '../../includes/header.php';
             }
         });
     }
+
+    // Tooltip initialization
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltips.forEach(function(tooltip) {
+            new bootstrap.Tooltip(tooltip);
+        });
+    });
 </script>
+
+<style>
+    .stats-card {
+        margin-bottom: 15px;
+        cursor: default;
+        transition: transform 0.2s;
+    }
+
+    .stats-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .table td,
+    .table th {
+        vertical-align: middle;
+    }
+
+    .progress {
+        background-color: #e9ecef;
+        border-radius: 10px;
+    }
+
+    .progress-bar {
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 30px;
+    }
+
+    .border {
+        border: 1px solid #dee2e6 !important;
+        border-radius: 8px;
+    }
+
+    .btn-group .btn {
+        margin-right: 2px;
+    }
+
+    @media (max-width: 768px) {
+        .btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .btn-group .btn {
+            margin-right: 0;
+            border-radius: 4px !important;
+        }
+
+        .stats-card {
+            margin-bottom: 10px;
+        }
+    }
+</style>
 
 <?php include '../../includes/footer.php'; ?>

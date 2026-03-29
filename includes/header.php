@@ -242,6 +242,10 @@
                             <i class="fas fa-chart-area"></i> Pro-rata Method
                         </a>
 
+                        <a href="<?php echo APP_URL; ?>/modules/accounting/interest-dividend-calculation.php" class="submenu-item">
+                            <i class="fas fa-exchange-alt"></i> Interest & Dividend Calculation
+                        </a>
+
                         <a href="<?php echo APP_URL; ?>/modules/dividends/payments.php" class="submenu-item">
                             <i class="fas fa-money-bill-wave"></i> Payments
                         </a>
